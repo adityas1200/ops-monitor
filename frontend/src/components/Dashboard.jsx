@@ -250,7 +250,7 @@ function DQView({ data, status, nameFilter, loading, configured, onSelect, onRun
 }
 
 export default function Dashboard({ onRunRCA, onSelect, onReportError, platforms, onChatContextChange }) {
-  const [subTab, setSubTab] = useState('tasks')
+  const [subTab, setSubTab] = useState('dq')
   const [dateFrom, setDateFrom] = useState(twoDaysAgoISO())
   const [dateTo, setDateTo] = useState(new Date().toISOString().slice(0, 10))
   const [taskStatus, setTaskStatus] = useState('ALL')
@@ -365,11 +365,11 @@ export default function Dashboard({ onRunRCA, onSelect, onReportError, platforms
   return (
     <div>
       <div className="subtabs">
-        <button className={`subtab ${subTab === 'tasks' ? 'active' : ''}`} onClick={() => setSubTab('tasks')}>
-          Tasks
-        </button>
         <button className={`subtab ${subTab === 'dq' ? 'active' : ''}`} onClick={() => setSubTab('dq')}>
           DQ Status
+        </button>
+        <button className={`subtab ${subTab === 'tasks' ? 'active' : ''}`} onClick={() => setSubTab('tasks')}>
+          Tasks
         </button>
       </div>
 

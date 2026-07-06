@@ -1,4 +1,5 @@
 from __future__ import annotations
+import json
 from typing import Any, Dict, List, Optional
 
 from app.agents.base import BaseAgent
@@ -136,6 +137,30 @@ class ChatAgent(BaseAgent):
     name = "chat"
     skill_file = "chat.md"
 
+    def _llm_reply(self, intent: str, data: Any, message: str,
+                   context: Dict[str, Any], fallback_reply: str) -> str:
+        """Use LLM to generate a conversational reply from structured data."""
+        if not self.harness.available:
+            return fallback_reply
+        system = (
+            "You are a helpful data-ops assistant in an operations monitoring dashboard called "
+            "'Agentic Ops Monitoring & QC'. Respond conversationally and concisely. "
+            "Use bullet points for lists. Always suggest a clear next step the user can take. "
+            "Do not use generic filler — lead with concrete data from the payload. "
+            "Keep the response under 300 words. Do not wrap in JSON."
+        )
+        data_str = json.dumps(data, default=str)[:3000] if data else "No additional data."
+        user_prompt = (
+            f"User message: \"{message}\"\n"
+            f"Detected intent: {intent}\n"
+            f"Dashboard context: tab={context.get('tab')}, view={(_dash(context)).get('view')}\n"
+            f"Data payload:\n{data_str}\n\n"
+            f"Generate a helpful, human-like response. Reference specific names, IDs, "
+            f"error messages, and numbers from the data. Suggest what the user should do next."
+        )
+        result = self.harness.chat_reason(system, user_prompt, max_tokens=1000)
+        return result.strip() if result else fallback_reply
+
     def handle(self, message: str, pipeline_id: Optional[str] = None,
                context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         context = context or {}
@@ -152,100 +177,115 @@ class ChatAgent(BaseAgent):
                                        ("also", "check", "what about", "consider", "because", "source")) else None
                 payload = RCAAgent().analyze(pipeline_id, extra_context=extra)
                 agent = "rca"
-                reply = self._format_rca_reply(payload, extra)
+                fallback = self._format_rca_reply(payload, extra)
+                reply = self._llm_reply(intent, payload, message, context, fallback)
 
             elif intent == "resolution":
-                reply, payload, agent = self._resolution_reply(pipeline_id, context)
+                fallback, payload, agent = self._resolution_reply(pipeline_id, context)
+                reply = self._llm_reply(intent, payload, message, context, fallback)
 
             elif intent == "explain_failure":
                 if pipeline_id.startswith("dq_"):
-                    reply, payload, agent = self._dq_detail_reply(pipeline_id, message, context)
+                    fallback, payload, agent = self._dq_detail_reply(pipeline_id, message, context)
                     intent = "failed_dq"
                 else:
                     payload = RCAAgent().analyze(pipeline_id)
                     agent = "rca"
-                    reply = self._format_rca_reply(payload, None, detailed=True)
+                    fallback = self._format_rca_reply(payload, None, detailed=True)
+                reply = self._llm_reply(intent, payload, message, context, fallback)
 
             elif intent == "suggest_fix":
                 if pipeline_id.startswith("dq_"):
-                    reply, payload, agent = self._dq_resolution_reply(pipeline_id, context)
+                    fallback, payload, agent = self._dq_resolution_reply(pipeline_id, context)
                     intent = "failed_dq"
                 else:
                     payload = FixAgent().suggest(pipeline_id)
                     agent = "fix"
-                    reply = (f"Suggested fix: {payload['title']} (risk={payload['risk']}).\n"
-                             f"{payload.get('rationale', '')}\n\n"
-                             f"Open Workbench to review the before/after diff, or ask me to validate it.")
+                    fallback = (f"Suggested fix: {payload['title']} (risk={payload['risk']}).\n"
+                                f"{payload.get('rationale', '')}\n\n"
+                                f"Open Workbench to review the before/after diff, or ask me to validate it.")
+                reply = self._llm_reply(intent, payload, message, context, fallback)
 
             elif intent == "modify_fix":
                 payload = FixAgent().suggest(pipeline_id, user_edit=message)
                 agent = "fix"
-                reply = f"Applied your edit. Updated fix: {payload['title']}. Want me to validate it?"
+                fallback = f"Applied your edit. Updated fix: {payload['title']}. Want me to validate it?"
+                reply = self._llm_reply(intent, payload, message, context, fallback)
 
             elif intent == "validate_fix":
                 payload = TestAgent().validate(pipeline_id)
                 agent = "test"
                 s = payload["summary"]
-                reply = (f"Validation on zero-copy clone {payload['clone_name']} ({payload['environment']}):\n"
-                         f"{s['passed']}/{s['total']} passed, overall {payload['overall']}.")
+                fallback = (f"Validation on zero-copy clone {payload['clone_name']} ({payload['environment']}):\n"
+                            f"{s['passed']}/{s['total']} passed, overall {payload['overall']}.")
+                reply = self._llm_reply(intent, payload, message, context, fallback)
 
         elif intent == "failed_tasks":
-            payload, reply = self._failed_tasks_reply(context)
+            payload, fallback = self._failed_tasks_reply(context)
             agent = "monitoring"
+            reply = self._llm_reply(intent, payload, message, context, fallback)
 
         elif intent == "failed_dq":
-            payload, reply = self._failed_dq_reply(context, message)
+            payload, fallback = self._failed_dq_reply(context, message)
             agent = "monitoring"
+            reply = self._llm_reply(intent, payload, message, context, fallback)
 
         elif intent == "task_status":
-            payload, reply = self._task_status_reply(context)
+            payload, fallback = self._task_status_reply(context)
             agent = "monitoring"
+            reply = self._llm_reply(intent, payload, message, context, fallback)
 
         elif intent == "dq_status":
-            payload, reply = self._dq_status_reply(context)
+            payload, fallback = self._dq_status_reply(context)
             agent = "monitoring"
+            reply = self._llm_reply(intent, payload, message, context, fallback)
 
         elif intent == "resolution":
-            reply, payload, agent = self._resolution_reply(pipeline_id, context)
+            fallback, payload, agent = self._resolution_reply(pipeline_id, context)
+            reply = self._llm_reply(intent, payload, message, context, fallback)
 
         elif intent == "explain_failure":
             active = _active_pipeline(context, pipeline_id)
             if active and str(active.get("id", "")).startswith("dq_"):
-                reply, payload, agent = self._dq_detail_reply(active["id"], message, context)
+                fallback, payload, agent = self._dq_detail_reply(active["id"], message, context)
                 intent = "failed_dq"
             elif active and active.get("id"):
                 payload = RCAAgent().analyze(active["id"])
                 agent = "rca"
-                reply = self._format_rca_reply(payload, None, detailed=True)
+                fallback = self._format_rca_reply(payload, None, detailed=True)
             else:
                 dash_view = _dash(context).get("view", "tasks")
                 if dash_view == "dq":
-                    payload, reply = self._failed_dq_reply(context, message)
+                    payload, fallback = self._failed_dq_reply(context, message)
                     agent = "monitoring"
                     intent = "failed_dq"
                 else:
-                    payload, reply = self._failed_tasks_reply(context)
+                    payload, fallback = self._failed_tasks_reply(context)
                     agent = "monitoring"
                     intent = "failed_tasks"
+            reply = self._llm_reply(intent, payload, message, context, fallback)
 
         elif intent == "add_issue":
             payload = self._add_issue(message, pipeline_id)
             agent = "memory"
-            reply = (f"Logged your issue to agent memory as {payload['incident_id']}. "
-                     f"I'll match future incidents against it for faster resolution.")
+            fallback = (f"Logged your issue to agent memory as {payload['incident_id']}. "
+                        f"I'll match future incidents against it for faster resolution.")
+            reply = self._llm_reply(intent, payload, message, context, fallback)
 
         elif intent == "status":
             dash_view = _dash(context).get("view")
             if dash_view == "dq":
-                payload, reply = self._dq_status_reply(context)
+                payload, fallback = self._dq_status_reply(context)
             elif dash_view == "tasks":
-                payload, reply = self._task_status_reply(context)
+                payload, fallback = self._task_status_reply(context)
             else:
-                payload, reply = self._combined_status_reply(context)
+                payload, fallback = self._combined_status_reply(context)
             agent = "monitoring"
+            reply = self._llm_reply(intent, payload, message, context, fallback)
 
         elif needs_pipeline and not pipeline_id:
-            reply = self._no_pipeline_hint(intent, message, context)
+            fallback = self._no_pipeline_hint(intent, message, context)
+            reply = self._llm_reply(intent, None, message, context, fallback)
 
         else:
             reply = self._general_reply(message, pipeline_id, context)

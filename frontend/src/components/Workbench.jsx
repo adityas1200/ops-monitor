@@ -1,51 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { api } from '../api/client'
 import LineageTable from './LineageTable'
 import TableLineageGraph from './TableLineageGraph'
-
-const STATUS_ALIASES = {
-  SUCCESS: ['SUCCESS', 'SUCCEEDED', 'PASS', 'PASSED', 'OK'],
-  FAILED: ['FAILED', 'FAIL', 'TIMEOUT', 'FAILED_AND_AUTO_SUSPENDED', 'ERROR'],
-  SKIPPED: ['SKIPPED', 'SKIP', 'CANCELLED'],
-  RUNNING: ['RUNNING', 'EXECUTING', 'SCHEDULED', 'PENDING'],
-  DELAYED: ['DELAYED', 'WARN', 'WARNING'],
-}
-const STATUS_PRIORITY = { FAILED: 0, DELAYED: 1, RUNNING: 2, SKIPPED: 3, SUCCESS: 4 }
-
-function getStatusPriority(s) {
-  const upper = (s || '').toUpperCase()
-  for (const [group, aliases] of Object.entries(STATUS_ALIASES)) {
-    if (aliases.includes(upper)) return STATUS_PRIORITY[group] ?? 5
-  }
-  return 5
-}
-
-function sortRows(rows, sortCol, sortDir) {
-  if (!sortCol) return rows
-  const dir = sortDir === 'asc' ? 1 : -1
-  return [...rows].sort((a, b) => {
-    let av, bv
-    if (sortCol === 'status') {
-      av = getStatusPriority(a.status)
-      bv = getStatusPriority(b.status)
-    } else {
-      av = (a[sortCol] || '').toLowerCase()
-      bv = (b[sortCol] || '').toLowerCase()
-    }
-    if (av < bv) return -1 * dir
-    if (av > bv) return 1 * dir
-    return 0
-  })
-}
-
-function SortableHeader({ label, colKey, sortCol, sortDir, onSort }) {
-  const active = sortCol === colKey
-  return (
-    <th onClick={() => onSort(colKey)} style={{ cursor: 'pointer', userSelect: 'none' }}>
-      {label} {active ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}
-    </th>
-  )
-}
 
 function TestSummary({ test }) {
   const [open, setOpen] = useState(null)
@@ -321,66 +277,15 @@ function RcaReport({ rca, selected, busy, onSuggestFix }) {
   )
 }
 
-export default function Workbench({ activePipeline, onSelect, onReportError }) {
-  const [failed, setFailed] = useState([])
+export default function Workbench({ activePipeline, onSelect, onReportError, onBackToDashboard }) {
   const [selected, setSelected] = useState(activePipeline)
   const [rca, setRca] = useState(null)
   const [fix, setFix] = useState(null)
   const [test, setTest] = useState(null)
   const [busy, setBusy] = useState('')
-  const [showJobList, setShowJobList] = useState(!activePipeline)
-  const [sortCol, setSortCol] = useState('status')
-  const [sortDir, setSortDir] = useState('asc')
-  const [typeFilter, setTypeFilter] = useState('ALL')
-  const [nameFilter, setNameFilter] = useState('')
+  const [hasActioned, setHasActioned] = useState(!!activePipeline)
 
-  const handleSort = useCallback((col) => {
-    setSortCol((prev) => {
-      if (prev === col) {
-        setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
-      } else {
-        setSortDir('asc')
-      }
-      return col
-    })
-  }, [])
-
-  const sortedFailed = useMemo(() => {
-    const needle = nameFilter.toLowerCase()
-    let filtered = typeFilter === 'ALL'
-      ? failed
-      : typeFilter === 'DQ'
-        ? failed.filter((p) => p.id?.startsWith('dq_'))
-        : failed.filter((p) => !p.id?.startsWith('dq_'))
-    if (needle) {
-      filtered = filtered.filter((p) => (p.name || '').toLowerCase().includes(needle))
-    }
-    return sortRows(filtered, sortCol, sortDir)
-  }, [failed, sortCol, sortDir, typeFilter, nameFilter])
-
-  useEffect(() => {
-    if (showJobList) {
-      Promise.all([api.summary({ status: 'ALL' }), api.dqSummary()])
-        .then(([tasks, dq]) => {
-          const failedTasks = (tasks.all_pipelines || tasks.pipelines).filter(
-            (p) => p.status === 'FAILED' || p.status === 'DELAYED',
-          )
-          const failedDq = (dq.all_checks || dq.checks || []).filter(
-            (c) => c.status === 'FAILED' || c.status === 'DELAYED',
-          )
-          setFailed([...failedTasks, ...failedDq])
-          ;(tasks.errors || []).concat(dq.errors || []).forEach((err) => onReportError?.({
-            tab: 'Workbench',
-            action: 'load failed jobs',
-            error: `${err.platform}: ${err.error}`,
-            details: { platform: err.platform },
-          }))
-        })
-        .catch((e) => reportApiError(onReportError, 'load failed jobs', e))
-    }
-  }, [showJobList])
-
-  useEffect(() => { if (activePipeline) { setSelected(activePipeline); setShowJobList(false); runRCA(activePipeline.id) } }, [activePipeline])
+  useEffect(() => { if (activePipeline) { setSelected(activePipeline); setHasActioned(true); runRCA(activePipeline.id) } }, [activePipeline])
 
   const runRCA = (id) => {
     setBusy('rca'); setRca(null); setFix(null); setTest(null)
@@ -413,54 +318,19 @@ export default function Workbench({ activePipeline, onSelect, onReportError }) {
 
   return (
     <div>
-      {showJobList ? (
-        <div className="card">
-          <h3>Workbench · Failed & Delayed Jobs</h3>
-          <div className="toolbar" style={{ marginBottom: 8 }}>
-            <label>Search</label>
-            <input
-              type="text"
-              placeholder="Filter by name…"
-              value={nameFilter}
-              onChange={(e) => setNameFilter(e.target.value)}
-              style={{ minWidth: 160 }}
-            />
-            <label>Type</label>
-            <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
-              <option value="ALL">All</option>
-              <option value="TASK">Tasks only</option>
-              <option value="DQ">DQ only</option>
-            </select>
-          </div>
-          <table>
-            <thead><tr>
-              <SortableHeader label="Job" colKey="name" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
-              <th>Type</th>
-              <SortableHeader label="Platform" colKey="platform" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
-              <SortableHeader label="Status" colKey="status" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
-              <th></th>
-            </tr></thead>
-            <tbody>
-              {sortedFailed.map((p) => (
-                <tr key={p.id}>
-                  <td>{p.name}</td>
-                  <td><span className="pill">{p.id?.startsWith('dq_') ? 'DQ' : 'Task'}</span></td>
-                  <td><span className="pill">{p.platform}</span></td>
-                  <td><span className={`badge ${p.status}`}>{p.status}</span></td>
-                  <td>
-                    <button className="btn" onClick={() => { setSelected(p); setShowJobList(false); onSelect?.(p); runRCA(p.id) }}>Run RCA</button>
-                  </td>
-                </tr>
-              ))}
-              {sortedFailed.length === 0 && (
-                <tr><td colSpan={5} className="muted">No failed or delayed jobs found.</td></tr>
-              )}
-            </tbody>
-          </table>
+      {!hasActioned ? (
+        <div className="card" style={{ textAlign: 'center', padding: '60px 30px' }}>
+          <h3 style={{ marginBottom: 12 }}>Workbench</h3>
+          <p className="muted" style={{ fontSize: 15 }}>
+            Go to <strong>Dashboard</strong> to see if any DQ check, task, or pipeline has failed.
+          </p>
+          <p className="muted" style={{ fontSize: 13 }}>
+            Click <strong>Run RCA</strong> on a failed item to start the investigation here.
+          </p>
         </div>
       ) : (
         <div style={{ marginBottom: 12 }}>
-          <button className="btn sec" onClick={() => setShowJobList(true)}>← Back to all jobs</button>
+          <button className="btn sec" onClick={onBackToDashboard}>← Back to Dashboard</button>
         </div>
       )}
 

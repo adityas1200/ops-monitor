@@ -49,26 +49,96 @@ body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: va
 button { font-family: inherit; cursor: pointer; }
 
 /* ---- Layout -------------------------------------------------------- */
-.app { display: flex; flex-direction: column; height: 100vh; }
-.topbar { display: flex; align-items: center; gap: 18px; padding: 12px 20px; background: var(--panel);
-  border-bottom: 1px solid var(--border); }
-.logo { font-weight: 700; font-size: 18px; letter-spacing: .5px; }
-.logo span { color: var(--accent); }
-.tabs { display: flex; gap: 6px; }
-.tab { padding: 7px 16px; border-radius: 8px; background: transparent; color: var(--muted);
-  border: 1px solid transparent; font-size: 14px; }
-.tab.active { background: var(--panel2); color: var(--text); border-color: var(--border); }
+.app { display: flex; flex-direction: row; height: 100vh; }
+
+/* ---- Sidebar ------------------------------------------------------- */
+.sidebar {
+  width: 220px;
+  min-width: 220px;
+  background: #2d2d2d;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid #222;
+}
+[data-theme="dark"] .sidebar { background: #111318; border-right-color: #1a1f2a; }
+
+.sidebar-brand {
+  padding: 24px 18px 18px;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+}
+.logo {
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: .3px;
+  color: #ffffff;
+  line-height: 1.4;
+}
+.logo span { color: #4f8cff; }
+
+.sidebar-nav {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px 10px;
+}
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 14px;
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(255,255,255,.65);
+  border: none;
+  font-size: 14px;
+  text-align: left;
+  transition: background .15s, color .15s;
+}
+.nav-item:hover { background: rgba(255,255,255,.07); color: #fff; }
+.nav-item.active { background: rgba(79,140,255,.18); color: #fff; font-weight: 600; }
+.nav-icon { font-size: 16px; width: 20px; text-align: center; }
+
+.sidebar-footer {
+  padding: 14px;
+  border-top: 1px solid rgba(255,255,255,.08);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: stretch;
+}
+.sidebar-footer .mode-pill {
+  font-size: 11px;
+  padding: 5px 10px;
+  border-radius: 20px;
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.12);
+  color: rgba(255,255,255,.5);
+  text-align: center;
+}
+.sidebar-footer .mode-pill.live { color: #2ecc71; border-color: rgba(46,204,113,.4); }
+.sidebar-footer .theme-toggle {
+  width: 100%;
+  border-radius: 8px;
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.12);
+  color: rgba(255,255,255,.7);
+}
+.sidebar-footer .theme-toggle:hover { background: rgba(255,255,255,.12); }
+
+/* ---- Sub-tabs (Dashboard) ------------------------------------------ */
 .subtabs { display: flex; gap: 6px; margin-bottom: 4px; }
 .subtab { padding: 6px 14px; border-radius: 8px; background: transparent; color: var(--muted);
   border: 1px solid var(--border); font-size: 13px; }
 .subtab.active { background: var(--panel2); color: var(--text); border-color: var(--accent); }
-.mode-pill { margin-left: auto; font-size: 12px; padding: 4px 10px; border-radius: 20px;
+
+/* ---- Mode pill (non-sidebar usage) --------------------------------- */
+.mode-pill { font-size: 12px; padding: 4px 10px; border-radius: 20px;
   background: var(--panel2); border: 1px solid var(--border); color: var(--muted); }
 .mode-pill.live { color: var(--green); border-color: var(--green); }
 
 /* ---- Theme toggle -------------------------------------------------- */
 .theme-toggle {
-  width: 34px;
   height: 34px;
   border-radius: 8px;
   background: var(--panel2);
@@ -87,7 +157,7 @@ button { font-family: inherit; cursor: pointer; }
 /* ---- Body / main panes -------------------------------------------- */
 .body { display: flex; flex: 1; overflow: hidden; }
 .main { flex: 1; overflow: auto; padding: 20px; }
-.chat-pane { width: 380px; border-left: 1px solid var(--border); background: var(--panel);
+.chat-pane { width: 380px; min-width: 380px; border-left: 1px solid var(--border); background: var(--panel);
   display: flex; flex-direction: column; }
 
 /* ---- KPI cards ----------------------------------------------------- */

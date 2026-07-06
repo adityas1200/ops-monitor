@@ -1,0 +1,13 @@
+Improvement #1 :
+
+1- Rename Tool name from 'Ops Monitoring' to 'Agentic Ops Monitoring and QC'
+2- Revamp Front end design - 
+   -use combination of dark grey and white
+   -align dashboard, workbench and settings options in the left side bar
+   -In Dashboard, DQ status 'tab' should be the default selection and should be placed before 'Tasks'
+   -First time, when user clicks on workbench. It should display message 'Go to Dashboard to see if any DQ or task or pipeline failed'
+   -When user clicks 'Run RCA' on any failed DQ/Tasks/Pipeline, then it directs to Workbench to show RCA and further next steps. In such case if user clicks on any other tab and the comes back to 'Workbench' it should retain the last results and set of actions that have already been done. There is no need to run the RCA everytime user clicks on 'Workbench'
+3- Chat Agent should be using LLM to chat with the user and provide more human like error rather than any defined response. Please modify the chat agent to use LLM
+
+Fix #1 - 
+1 - On 'Workbench' -> 'Back to all jobs' is randomly displaying all tasks and DQs on the same page where as it should revert to Dashboard tab with all filters and data retained

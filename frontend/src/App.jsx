@@ -69,31 +69,36 @@ export default function App() {
 
   return (
     <div className="app">
-      <div className="topbar">
-        <div className="logo">ops<span>·</span>monitor</div>
-        <div className="tabs">
+      <div className="sidebar">
+        <div className="sidebar-brand">
+          <div className="logo">Agentic Ops<br/>Monitoring <span>&amp; QC</span></div>
+        </div>
+        <nav className="sidebar-nav">
           {['dashboard', 'workbench', 'settings'].map((t) => (
-            <button key={t} className={`tab ${tab === t ? 'active' : ''}`} onClick={() => setTab(t)}>
+            <button key={t} className={`nav-item ${tab === t ? 'active' : ''}`} onClick={() => setTab(t)}>
+              <span className="nav-icon">{t === 'dashboard' ? '◉' : t === 'workbench' ? '⚙' : '⚡'}</span>
               {t[0].toUpperCase() + t.slice(1)}
             </button>
           ))}
+        </nav>
+        <div className="sidebar-footer">
+          <div className={`mode-pill ${configured.length ? 'live' : ''}`}>
+            {configured.length ? `● ${configured.join(' + ')}` : '● configure in Settings'}
+          </div>
+          <button
+            className="theme-toggle"
+            onClick={toggleTheme}
+            title={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
+            aria-label={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
+          >
+            {theme === 'light' ? '☾' : '☀'}
+          </button>
         </div>
-        <div className={`mode-pill ${configured.length ? 'live' : ''}`}>
-          {configured.length ? `● ${configured.join(' + ')}` : '● configure in Settings'}
-        </div>
-        <button
-          className="theme-toggle"
-          onClick={toggleTheme}
-          title={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
-          aria-label={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
-        >
-          {theme === 'light' ? '☾' : '☀'}
-        </button>
       </div>
 
       <div className="body">
         <div className="main">
-          {tab === 'dashboard' && (
+          <div style={{ display: tab === 'dashboard' ? 'block' : 'none' }}>
             <Dashboard
               platforms={platforms}
               onRunRCA={openInWorkbench}
@@ -101,20 +106,21 @@ export default function App() {
               onReportError={reportActivityError}
               onChatContextChange={onChatContextChange}
             />
-          )}
-          {tab === 'workbench' && (
+          </div>
+          <div style={{ display: tab === 'workbench' ? 'block' : 'none' }}>
             <Workbench
               activePipeline={activePipeline}
               onSelect={setActivePipeline}
               onReportError={reportActivityError}
+              onBackToDashboard={() => setTab('dashboard')}
             />
-          )}
-          {tab === 'settings' && (
+          </div>
+          <div style={{ display: tab === 'settings' ? 'block' : 'none' }}>
             <Settings
               onSaved={(p) => setPlatforms(p)}
               onReportError={reportActivityError}
             />
-          )}
+          </div>
         </div>
         <div className="chat-pane">
           <ChatWindow

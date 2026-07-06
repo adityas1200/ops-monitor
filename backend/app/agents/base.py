@@ -44,6 +44,10 @@ class ClaudeHarness:
         except Exception:  # noqa: BLE001
             return None
 
+    def chat_reason(self, system: str, user: str, max_tokens: int = 1000) -> Optional[str]:
+        """Like reason() but for free-form conversational replies (no JSON constraint)."""
+        return self.reason(system, user, max_tokens)
+
 
 class BaseAgent:
     name: str = "base"
