@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)",
+      "Bash(python -c \"from app.connectors.snowflake_connector import SnowflakeConnector, reset_shared_connection; print\\('OK'\\)\")"
+    ]
+  }
+}

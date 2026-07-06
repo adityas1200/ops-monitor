@@ -1,0 +1,14 @@
+# Python
+backend/.venv/
+__pycache__/
+*.pyc
+backend/app/data/connection_settings.json
+backend/app/memory/store/*.json
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# Env
+.env
+*.local

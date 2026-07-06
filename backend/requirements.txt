@@ -1,0 +1,13 @@
+# Core API
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+pydantic==2.9.2
+
+# Snowflake connector (required for Snowflake live mode and health checks)
+snowflake-connector-python==4.6.0
+
+# Live AWS connectors (optional — only needed in AWS live mode)
+boto3==1.35.24
+
+# Claude harness (optional — only needed if ANTHROPIC_API_KEY is set)
+anthropic==0.39.0
