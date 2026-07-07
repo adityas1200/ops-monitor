@@ -117,6 +117,74 @@ class RCAAgent(BaseAgent):
     name = "rca"
     skill_file = "rca.md"
 
+    def __init__(self):
+        super().__init__()
+        self._knowledge = self._load_knowledge_file()
+
+    def _load_knowledge_file(self) -> str:
+        """Load the user-contributed rca_knowledge.md alongside the main skill."""
+        from app.core.config import SKILLS_DIR
+        p = SKILLS_DIR / "rca_knowledge.md"
+        return p.read_text(encoding="utf-8") if p.exists() else ""
+
+    def _recall_by_tables(self, tables: List[str]) -> List[Dict[str, Any]]:
+        """Find past RCA memories that involve the same tables."""
+        if not tables:
+            return []
+        table_set = set(tables)
+        scored = []
+        for record in self.memory.all():
+            past_tables = set(record.get("tables_involved") or [])
+            overlap = table_set & past_tables
+            if overlap:
+                scored.append((len(overlap), record))
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [r for _, r in scored[:5]]
+
+    def _match_knowledge_rules(self, error: Optional[str], task_name: Optional[str],
+                               tables: List[str]) -> List[Dict[str, str]]:
+        """Match user-contributed knowledge rules against current failure context."""
+        if not self._knowledge:
+            return []
+        rules: List[Dict[str, str]] = []
+        current_block: Dict[str, str] = {}
+        for line in self._knowledge.split("\n"):
+            stripped = line.strip()
+            if stripped == "---":
+                if current_block.get("PATTERN"):
+                    rules.append(current_block)
+                current_block = {}
+                continue
+            if ":" in stripped and stripped.split(":")[0].strip().upper() in (
+                "PATTERN", "CATEGORY", "ROOT_CAUSE", "FIX", "ADDED_BY", "ADDED_ON", "NOTES"
+            ):
+                key, _, val = stripped.partition(":")
+                current_block[key.strip().upper()] = val.strip()
+        if current_block.get("PATTERN"):
+            rules.append(current_block)
+
+        matched = []
+        context_lower = " ".join([
+            (error or ""), (task_name or ""), " ".join(tables)
+        ]).lower()
+        for rule in rules:
+            pattern = (rule.get("PATTERN") or "").lower()
+            if pattern and pattern in context_lower:
+                matched.append(rule)
+        return matched[:5]
+
+    def update_resolution(self, pipeline_id: str, resolution: str) -> None:
+        """Patch the most recent RCA memory for this pipeline with the resolution applied."""
+        all_mem = self.memory.all()
+        for record in reversed(all_mem):
+            if record.get("pipeline_id") == pipeline_id:
+                record["resolution_applied"] = resolution
+                from app.core.config import MEMORY_DIR
+                import json
+                (MEMORY_DIR / self.memory.file).write_text(
+                    json.dumps(all_mem, indent=2, default=str), encoding="utf-8")
+                break
+
     # ── Private helpers ────────────────────────────────────────────────────────
 
     def _enrich_for_rca(self, lineage: LineageService, record: Dict[str, Any]) -> Dict[str, Any]:
@@ -591,9 +659,29 @@ class RCAAgent(BaseAgent):
                     impacted_keys = self._downstream_impact(root_key, graph)
                     lineage_graph = self._build_lineage(target_key, root_key, impacted_keys, graph, run_by_key)
 
+        # ── SQL deep-dive: fetch task/procedure definition ────────────────────
+        root_meta = graph.get(root_key, {})
+        root_db = root_meta.get("database") or root.get("database") or ""
+        root_schema = root_meta.get("schema") or root.get("schema") or ""
+        root_task_name = root_meta.get("task_name") or ""
+        task_sql = lineage.fetch_object_definition(root_db, root_schema, root_task_name, "task")
+
+        procedure_io = lineage.resolve_task_procedure_io(
+            root_db, root_schema, root_task_name, root.get("tables"))
+
+        # ── Memory: smart recall by tables ──────────────────────────────────
+        table_priors = self._recall_by_tables(target.get("tables", []))
+        all_priors = (prior or []) + table_priors
+
+        # ── Knowledge rules matching ─────────────────────────────────────────
+        knowledge_rules = self._match_knowledge_rules(
+            root.get("error") or target.get("error"),
+            target.get("name"),
+            target.get("tables", []),
+        )
+
         # ── Claude harness (uses the full rca.md skill) ───────────────────────
         llm = self.think({
-            # Metadata First inputs as per skill Principle 1
             "task_name": target.get("name"),
             "task_state": target.get("status"),
             "error_message": root.get("error") or target.get("error"),
@@ -603,14 +691,29 @@ class RCAAgent(BaseAgent):
             "parent_task": graph.get(target_key, {}).get("upstream", [])[:3],
             "dependency_tasks": [run_by_key.get(k, {}).get("name", k) for k in impacted_keys[:5]],
             "tables": target.get("tables", [])[:10],
-            # RCA context
             "root_cause_task": root.get("name"),
             "category": category,
             "affected_tables": [t["table"] for t in affected_tables[:10]],
             "impacted_downstream_count": len(impacted_keys),
-            "prior_cases": prior[:3],
+            "task_definition_sql": (task_sql or "")[:2000],
+            "procedure_io": procedure_io,
+            "sql_analysis_request": "Analyze this SQL and explain why it failed given the error message.",
+            "prior_rca_cases": [
+                {"error_pattern": p.get("error_pattern"), "category": p.get("category"),
+                 "resolution": p.get("resolution_applied"), "analysis": p.get("code_analysis_summary")}
+                for p in all_priors[:3]
+            ],
+            "domain_knowledge": knowledge_rules[:3],
             "extra_context": extra_context,
-        }, max_tokens=2000)
+        }, max_tokens=2500)
+
+        # ── Build code_analysis ──────────────────────────────────────────────
+        code_analysis: Dict[str, Any] = {
+            "task_sql": task_sql[:2000] if task_sql else None,
+            "procedure_io": procedure_io,
+            "tables_inspected": [t["table"] for t in affected_tables[:10]],
+            "llm_explanation": None,
+        }
 
         if llm:
             if llm.get("summary"):
@@ -628,6 +731,10 @@ class RCAAgent(BaseAgent):
                 remediation.update(llm["remediation"])
             if llm.get("evidence"):
                 evidence = list(llm["evidence"])
+            if llm.get("code_analysis"):
+                code_analysis["llm_explanation"] = llm["code_analysis"]
+            elif llm.get("detailed_analysis"):
+                code_analysis["llm_explanation"] = llm["detailed_analysis"]
 
         # ── Text lineage diagrams (skill format) ─────────────────────────────
         upstream_text = (
@@ -694,10 +801,23 @@ class RCAAgent(BaseAgent):
             "table_lineage": table_lineage,
             "downstream_consumers": downstream_consumers,
             "refinement": refinement,
-            "seen_before": bool(prior),
+            "code_analysis": code_analysis,
+            "knowledge_applied": knowledge_rules[:3] if knowledge_rules else None,
+            "seen_before": bool(all_priors),
         }
-        self.learn({"signature": signature, "pipeline_id": pipeline_id,
-                    "category": category, "root_cause_node": root_key})
+        self.learn({
+            "signature": signature,
+            "pipeline_id": pipeline_id,
+            "category": category,
+            "root_cause_node": root_key,
+            "root_cause_name": root.get("name"),
+            "error_pattern": (root.get("error") or "")[:200],
+            "resolution_applied": None,
+            "code_analysis_summary": (code_analysis.get("llm_explanation") or "")[:300],
+            "tables_involved": [t["table"] for t in affected_tables[:10]],
+            "severity": impact_assessment.get("business_severity"),
+            "confidence": confidence,
+        })
         return result
 
     def analyze_dq(self, check_id: str, extra_context: Optional[str] = None) -> Dict[str, Any]:
@@ -863,11 +983,86 @@ class RCAAgent(BaseAgent):
             summary += f" Note: {extra_context}"
 
         confidence = 0.78 if check_tables else 0.55
+
+        # ── DQ SQL deep-dive: fetch rule definition ──────────────────────────
+        dq_rule = DQConnector().fetch_dq_rule_sql(check.get("name") or "")
+        dq_rule_sql = None
+        if dq_rule:
+            dq_rule_sql = "\n".join(f"{k}: {v}" for k, v in dq_rule.items() if v)[:3000]
+
+        # ── Memory: recall priors for DQ checks ──────────────────────────────
+        dq_signature = f"dq {category} {(check.get('error') or '')[:50]}"
+        prior = self.recall(dq_signature)
+        table_priors = self._recall_by_tables(list(check_tables))
+        all_priors = (prior or []) + table_priors
+        if all_priors:
+            confidence = min(0.95, confidence + 0.1 * min(len(all_priors), 3))
+
+        # ── Knowledge rules ─────────────────────────────────────────────────
+        knowledge_rules = self._match_knowledge_rules(
+            check.get("error"), check.get("name"), list(check_tables))
+
+        # ── LLM analysis for DQ ──────────────────────────────────────────────
+        llm = self.think({
+            "analysis_type": "dq_check",
+            "qc_id": check.get("name"),
+            "qc_status": check.get("status"),
+            "error_message": check.get("error"),
+            "subject_area": check.get("table_name"),
+            "check_type": check.get("column_name"),
+            "tables": list(check_tables)[:10],
+            "dq_rule_definition": dq_rule_sql[:2000] if dq_rule_sql else None,
+            "related_failed_tasks": [
+                {"name": p.get("name"), "error": (p.get("error") or "")[:100]}
+                for p in related_tasks[:3]
+            ],
+            "category": category,
+            "prior_rca_cases": [
+                {"error_pattern": p.get("error_pattern"), "category": p.get("category"),
+                 "resolution": p.get("resolution_applied")}
+                for p in all_priors[:3]
+            ],
+            "domain_knowledge": knowledge_rules[:3],
+            "sql_analysis_request": "Analyze the DQ rule SQL and explain why this check failed.",
+            "extra_context": extra_context,
+        }, max_tokens=2000)
+
+        code_analysis: Dict[str, Any] = {
+            "task_sql": dq_rule_sql,
+            "procedure_io": None,
+            "tables_inspected": list(check_tables)[:10],
+            "llm_explanation": None,
+        }
+
+        if llm:
+            if llm.get("summary"):
+                summary = llm["summary"]
+            if llm.get("detailed_analysis"):
+                detailed_analysis = llm["detailed_analysis"]
+            if llm.get("failure_type"):
+                category = llm["failure_type"]
+            if llm.get("confidence"):
+                confidence = float(llm["confidence"])
+            if llm.get("remediation"):
+                remediation_override = llm["remediation"]
+            else:
+                remediation_override = None
+            if llm.get("evidence"):
+                evidence = list(llm["evidence"])
+            if llm.get("code_analysis"):
+                code_analysis["llm_explanation"] = llm["code_analysis"]
+            elif llm.get("detailed_analysis"):
+                code_analysis["llm_explanation"] = llm["detailed_analysis"]
+        else:
+            remediation_override = None
+
         confidence_lvl = _confidence_level(confidence)
 
         impact_assessment = self._build_impact_assessment(
             root_key, impacted_keys, affected_tables, downstream_consumers, run_by_key, graph)
         remediation = self._build_remediation(category, check, root_task or check)
+        if remediation_override:
+            remediation.update(remediation_override)
 
         upstream_text = _lineage_text(dq_upstream_lineage.get("nodes", []), dq_upstream_lineage.get("edges", []))
         downstream_text = _lineage_text(dq_downstream_lineage.get("nodes", []), dq_downstream_lineage.get("edges", []))
@@ -892,7 +1087,7 @@ class RCAAgent(BaseAgent):
             "root_cause_node": root_key, "category": category, "rca_summary": summary,
         })
 
-        return {
+        result = {
             "incident_id": incident["incident_id"],
             "pipeline_id": check_id,
             "analysis_type": "dq",
@@ -926,8 +1121,24 @@ class RCAAgent(BaseAgent):
             "table_lineage": table_lineage,
             "downstream_consumers": downstream_consumers,
             "refinement": None,
-            "seen_before": False,
+            "code_analysis": code_analysis,
+            "knowledge_applied": knowledge_rules[:3] if knowledge_rules else None,
+            "seen_before": bool(all_priors),
         }
+        self.learn({
+            "signature": dq_signature,
+            "pipeline_id": check_id,
+            "category": category,
+            "root_cause_node": root_key,
+            "root_cause_name": (root_task or check).get("name", check_id),
+            "error_pattern": (check.get("error") or "")[:200],
+            "resolution_applied": None,
+            "code_analysis_summary": (code_analysis.get("llm_explanation") or "")[:300],
+            "tables_involved": list(check_tables)[:10],
+            "severity": impact_assessment.get("business_severity"),
+            "confidence": confidence,
+        })
+        return result
 
     def _refine(self, target, root, category, hint: str, idx, run_by_key) -> Optional[Dict[str, Any]]:
         h = hint.lower()

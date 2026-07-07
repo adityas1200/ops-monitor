@@ -10,4 +10,4 @@ snowflake-connector-python==4.6.0
 boto3==1.35.24
 
 # Claude harness (optional — only needed if ANTHROPIC_API_KEY is set)
-anthropic==0.39.0
+anthropic>=0.116.0

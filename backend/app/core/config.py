@@ -7,6 +7,25 @@ from typing import Any, Dict
 
 APP_DIR = Path(__file__).resolve().parents[1]          # .../backend/app
 BACKEND_DIR = APP_DIR.parent                           # .../backend
+PROJECT_ROOT = BACKEND_DIR.parent                      # .../ops-monitor
+
+
+def _load_env_file(path: Path) -> None:
+    """Load a .env file into os.environ (does not override existing vars)."""
+    if not path.is_file():
+        return
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip().strip("'\"")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+_load_env_file(PROJECT_ROOT / ".env")
 SETTINGS_FILE = APP_DIR / "data" / "connection_settings.json"
 SKILLS_DIR = APP_DIR / "skills"
 MEMORY_DIR = APP_DIR / "memory" / "store"
@@ -17,6 +36,10 @@ DQ_TABLE_FQN = os.getenv(
     "CPH_DB_PRE_PROD.MODEL_V2.DQM_VALIDATION_SUMMARY",
 )
 DQ_SUBJECT_AREA = os.getenv("DQ_SUBJECT_AREA", "Lynkuet LAAD")
+DQ_RULES_TABLE_FQN = os.getenv(
+    "DQ_RULES_TABLE_FQN",
+    "CPH_DB_PROD.MODEL_V2.CONFIG_LYNKUET",
+)
 
 # Snowflake task monitoring (ACCOUNT_USAGE + TASK_HISTORY) — env defaults; overridden by settings file
 TASK_MONITOR_DATABASE = os.getenv("TASK_MONITOR_DATABASE", "CPH_DB_PROD")
@@ -24,9 +47,15 @@ TASK_NAME_PATTERN = os.getenv("TASK_NAME_PATTERN", "TASK%")
 TASK_HISTORICAL_MONTHS = int(os.getenv("TASK_HISTORICAL_MONTHS", "2"))
 TASK_FUTURE_DAYS = int(os.getenv("TASK_FUTURE_DAYS", "7"))
 
+# Sanitize proxy env vars (some corporate VDIs inject newlines that break httpx)
+for _proxy_var in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
+    _val = os.environ.get(_proxy_var)
+    if _val and _val != _val.strip():
+        os.environ[_proxy_var] = _val.strip()
+
 # Anthropic / Claude harness
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "").strip()
-CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")
+CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4.5")
 USE_CLAUDE = bool(ANTHROPIC_API_KEY)
 
 SF_OPTIONAL_FIELDS = frozenset({"database", "schema", "preprod_account", "user"})
@@ -60,6 +89,7 @@ _DEFAULT_SETTINGS: Dict[str, Any] = {
         "dq": {
             "table_fqn": DQ_TABLE_FQN,
             "subject_area": DQ_SUBJECT_AREA,
+            "rules_table_fqn": DQ_RULES_TABLE_FQN,
         },
     },
 }
@@ -156,6 +186,7 @@ def get_dq_monitoring_config(settings: Dict[str, Any] | None = None) -> Dict[str
     return {
         "table_fqn": str(dq.get("table_fqn") or DQ_TABLE_FQN).strip(),
         "subject_area": str(dq.get("subject_area") or DQ_SUBJECT_AREA).strip(),
+        "rules_table_fqn": str(dq.get("rules_table_fqn") or DQ_RULES_TABLE_FQN).strip(),
     }
 
 

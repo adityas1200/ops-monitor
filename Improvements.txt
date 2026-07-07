@@ -9,5 +9,18 @@ Improvement #1 :
    -When user clicks 'Run RCA' on any failed DQ/Tasks/Pipeline, then it directs to Workbench to show RCA and further next steps. In such case if user clicks on any other tab and the comes back to 'Workbench' it should retain the last results and set of actions that have already been done. There is no need to run the RCA everytime user clicks on 'Workbench'
 3- Chat Agent should be using LLM to chat with the user and provide more human like error rather than any defined response. Please modify the chat agent to use LLM
 
-Fix #1 - 
+Issue #1 - 
 1 - On 'Workbench' -> 'Back to all jobs' is randomly displaying all tasks and DQs on the same page where as it should revert to Dashboard tab with all filters and data retained
+
+Improvement #2 - 
+let me give you context around the RCA we are expecting and then accordingly modify your above analysis-
+- if anything fails be it DQ or Task/pipeline, RCA agent should be able to identify the cause of failure
+- Deep dive in to the RCA collect more details by back tracking the tables it failed, pull the procedure or view definition from which that table is created
+- Create a lineage to provide upstream and downstream visibility
+- Provide clean and clear summary of RCA
+- It should be able to fit in the above details in existing frontend structure
+Challenge - I am currently facing is that I am not getting the RCA as expected. For ex. - if a DQ fails then agent should be to extract it DQ sql, run it and see what is causing the failure and then subsequently back the tables sql to understand it's code and identify the reason and so on
+
+Improvement #3 -
+1- On DQ task tab, add view details button corresponding to each QC ID, by clicking this a popup should open which will show the SQL results corresponding to that query
+2- On Frontend, I want to keep simplified RCA view, similar to following screenshots. please modify RCA view as per following screenshots 'introducing-genie-zeroops-put-data-and-ai-blog-img-2.png' and 'introducing-genie-zeroops-put-data-and-ai-blog-img-3.png'

@@ -1,0 +1,1106 @@
+[
+  {
+    "timestamp": "2026-07-06T19:47:48.769975+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T19:47:49.184241+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                WITH HISTORICAL_TASKS AS (\n                    SELECT\n                        NAME              AS TASK_NAME,\n                        DATABASE_NAME,\n                        SCHEMA_NAME,\n                        STATE,\n                        QUERY_ID,\n                        SCHEDULED_TIME,\n                        QUERY_START_TIME,\n                        COMPLETED_TIME,\n                        ERROR_CODE,\n                        ERROR_MESSAGE,\n                        'HISTORICAL",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T19:47:50.420336+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T19:47:53.800778+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                WITH HISTORICAL_TASKS AS (\n                    SELECT\n                        NAME              AS TASK_NAME,\n                        DATABASE_NAME,\n                        SCHEMA_NAME,\n                        STATE,\n                        QUERY_ID,\n                        SCHEDULED_TIME,\n                        QUERY_START_TIME,\n                        COMPLETED_TIME,\n                        ERROR_CODE,\n                        ERROR_MESSAGE,\n                        'HISTORICAL",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T19:48:10.984617+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T19:48:11.017529+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                WITH HISTORICAL_TASKS AS (\n                    SELECT\n                        NAME              AS TASK_NAME,\n                        DATABASE_NAME,\n                        SCHEMA_NAME,\n                        STATE,\n                        QUERY_ID,\n                        SCHEDULED_TIME,\n                        QUERY_START_TIME,\n                        COMPLETED_TIME,\n                        ERROR_CODE,\n                        ERROR_MESSAGE,\n                        'HISTORICAL",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T19:48:21.676778+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T19:48:24.538145+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                WITH HISTORICAL_TASKS AS (\n                    SELECT\n                        NAME              AS TASK_NAME,\n                        DATABASE_NAME,\n                        SCHEMA_NAME,\n                        STATE,\n                        QUERY_ID,\n                        SCHEDULED_TIME,\n                        QUERY_START_TIME,\n                        COMPLETED_TIME,\n                        ERROR_CODE,\n                        ERROR_MESSAGE,\n                        'HISTORICAL",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:10:04.310239+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                WITH HISTORICAL_TASKS AS (\n                    SELECT\n                        NAME              AS TASK_NAME,\n                        DATABASE_NAME,\n                        SCHEMA_NAME,\n                        STATE,\n                        QUERY_ID,\n                        SCHEDULED_TIME,\n                        QUERY_START_TIME,\n                        COMPLETED_TIME,\n                        ERROR_CODE,\n                        ERROR_MESSAGE,\n                        'HISTORICAL",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:10:04.440422+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:10:04.738594+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:10:07.178778+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                WITH HISTORICAL_TASKS AS (\n                    SELECT\n                        NAME              AS TASK_NAME,\n                        DATABASE_NAME,\n                        SCHEMA_NAME,\n                        STATE,\n                        QUERY_ID,\n                        SCHEDULED_TIME,\n                        QUERY_START_TIME,\n                        COMPLETED_TIME,\n                        ERROR_CODE,\n                        ERROR_MESSAGE,\n                        'HISTORICAL",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:10:26.851363+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                WITH HISTORICAL_TASKS AS (\n                    SELECT\n                        NAME              AS TASK_NAME,\n                        DATABASE_NAME,\n                        SCHEMA_NAME,\n                        STATE,\n                        QUERY_ID,\n                        SCHEDULED_TIME,\n                        QUERY_START_TIME,\n                        COMPLETED_TIME,\n                        ERROR_CODE,\n                        ERROR_MESSAGE,\n                        'HISTORICAL",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:10:27.177768+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:10:45.842537+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:12:18.707683+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:12:21.830396+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                WITH HISTORICAL_TASKS AS (\n                    SELECT\n                        NAME              AS TASK_NAME,\n                        DATABASE_NAME,\n                        SCHEMA_NAME,\n                        STATE,\n                        QUERY_ID,\n                        SCHEDULED_TIME,\n                        QUERY_START_TIME,\n                        COMPLETED_TIME,\n                        ERROR_CODE,\n                        ERROR_MESSAGE,\n                        'HISTORICAL",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:13:01.732676+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                WITH HISTORICAL_TASKS AS (\n                    SELECT\n                        NAME              AS TASK_NAME,\n                        DATABASE_NAME,\n                        SCHEMA_NAME,\n                        STATE,\n                        QUERY_ID,\n                        SCHEDULED_TIME,\n                        QUERY_START_TIME,\n                        COMPLETED_TIME,\n                        ERROR_CODE,\n                        ERROR_MESSAGE,\n                        'HISTORICAL",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:13:02.636764+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:13:03.835691+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:14:03.241722+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:14:03.287869+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                WITH HISTORICAL_TASKS AS (\n                    SELECT\n                        NAME              AS TASK_NAME,\n                        DATABASE_NAME,\n                        SCHEMA_NAME,\n                        STATE,\n                        QUERY_ID,\n                        SCHEDULED_TIME,\n                        QUERY_START_TIME,\n                        COMPLETED_TIME,\n                        ERROR_CODE,\n                        ERROR_MESSAGE,\n                        'HISTORICAL",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:14:06.243125+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:14:08.943199+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                WITH HISTORICAL_TASKS AS (\n                    SELECT\n                        NAME              AS TASK_NAME,\n                        DATABASE_NAME,\n                        SCHEMA_NAME,\n                        STATE,\n                        QUERY_ID,\n                        SCHEDULED_TIME,\n                        QUERY_START_TIME,\n                        COMPLETED_TIME,\n                        ERROR_CODE,\n                        ERROR_MESSAGE,\n                        'HISTORICAL",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:20:03.485222+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:20:06.646737+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                WITH HISTORICAL_TASKS AS (\n                    SELECT\n                        NAME              AS TASK_NAME,\n                        DATABASE_NAME,\n                        SCHEMA_NAME,\n                        STATE,\n                        QUERY_ID,\n                        SCHEDULED_TIME,\n                        QUERY_START_TIME,\n                        COMPLETED_TIME,\n                        ERROR_CODE,\n                        ERROR_MESSAGE,\n                        'HISTORICAL",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:23:26.307236+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:23:29.427430+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                WITH HISTORICAL_TASKS AS (\n                    SELECT\n                        NAME              AS TASK_NAME,\n                        DATABASE_NAME,\n                        SCHEMA_NAME,\n                        STATE,\n                        QUERY_ID,\n                        SCHEDULED_TIME,\n                        QUERY_START_TIME,\n                        COMPLETED_TIME,\n                        ERROR_CODE,\n                        ERROR_MESSAGE,\n                        'HISTORICAL",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:24:13.114189+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                WITH HISTORICAL_TASKS AS (\n                    SELECT\n                        NAME              AS TASK_NAME,\n                        DATABASE_NAME,\n                        SCHEMA_NAME,\n                        STATE,\n                        QUERY_ID,\n                        SCHEDULED_TIME,\n                        QUERY_START_TIME,\n                        COMPLETED_TIME,\n                        ERROR_CODE,\n                        ERROR_MESSAGE,\n                        'HISTORICAL",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:24:13.762323+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:24:15.076699+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:24:27.164208+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                WITH HISTORICAL_TASKS AS (\n                    SELECT\n                        NAME              AS TASK_NAME,\n                        DATABASE_NAME,\n                        SCHEMA_NAME,\n                        STATE,\n                        QUERY_ID,\n                        SCHEDULED_TIME,\n                        QUERY_START_TIME,\n                        COMPLETED_TIME,\n                        ERROR_CODE,\n                        ERROR_MESSAGE,\n                        'HISTORICAL",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:24:27.421906+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:24:35.451407+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:24:38.203759+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                WITH HISTORICAL_TASKS AS (\n                    SELECT\n                        NAME              AS TASK_NAME,\n                        DATABASE_NAME,\n                        SCHEMA_NAME,\n                        STATE,\n                        QUERY_ID,\n                        SCHEDULED_TIME,\n                        QUERY_START_TIME,\n                        COMPLETED_TIME,\n                        ERROR_CODE,\n                        ERROR_MESSAGE,\n                        'HISTORICAL",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:25:47.764414+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:32:38.482623+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:40:41.461376+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:40:43.119705+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:40:43.617347+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                WITH HISTORICAL_TASKS AS (\n                    SELECT\n                        NAME              AS TASK_NAME,\n                        DATABASE_NAME,\n                        SCHEMA_NAME,\n                        STATE,\n                        QUERY_ID,\n                        SCHEDULED_TIME,\n                        QUERY_START_TIME,\n                        COMPLETED_TIME,\n                        ERROR_CODE,\n                        ERROR_MESSAGE,\n                        'HISTORICAL",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:41:11.854884+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:41:11.868089+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                WITH HISTORICAL_TASKS AS (\n                    SELECT\n                        NAME              AS TASK_NAME,\n                        DATABASE_NAME,\n                        SCHEMA_NAME,\n                        STATE,\n                        QUERY_ID,\n                        SCHEDULED_TIME,\n                        QUERY_START_TIME,\n                        COMPLETED_TIME,\n                        ERROR_CODE,\n                        ERROR_MESSAGE,\n                        'HISTORICAL",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:46:32.137499+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                WITH HISTORICAL_TASKS AS (\n                    SELECT\n                        NAME              AS TASK_NAME,\n                        DATABASE_NAME,\n                        SCHEMA_NAME,\n                        STATE,\n                        QUERY_ID,\n                        SCHEDULED_TIME,\n                        QUERY_START_TIME,\n                        COMPLETED_TIME,\n                        ERROR_CODE,\n                        ERROR_MESSAGE,\n                        'HISTORICAL",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:46:32.137499+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:47:02.752248+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:47:27.584766+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:47:28.951383+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:47:47.897405+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                WITH HISTORICAL_TASKS AS (\n                    SELECT\n                        NAME              AS TASK_NAME,\n                        DATABASE_NAME,\n                        SCHEMA_NAME,\n                        STATE,\n                        QUERY_ID,\n                        SCHEDULED_TIME,\n                        QUERY_START_TIME,\n                        COMPLETED_TIME,\n                        ERROR_CODE,\n                        ERROR_MESSAGE,\n                        'HISTORICAL",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:47:47.903468+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                WITH HISTORICAL_TASKS AS (\n                    SELECT\n                        NAME              AS TASK_NAME,\n                        DATABASE_NAME,\n                        SCHEMA_NAME,\n                        STATE,\n                        QUERY_ID,\n                        SCHEDULED_TIME,\n                        QUERY_START_TIME,\n                        COMPLETED_TIME,\n                        ERROR_CODE,\n                        ERROR_MESSAGE,\n                        'HISTORICAL",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:48:09.468198+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                WITH HISTORICAL_TASKS AS (\n                    SELECT\n                        NAME              AS TASK_NAME,\n                        DATABASE_NAME,\n                        SCHEMA_NAME,\n                        STATE,\n                        QUERY_ID,\n                        SCHEDULED_TIME,\n                        QUERY_START_TIME,\n                        COMPLETED_TIME,\n                        ERROR_CODE,\n                        ERROR_MESSAGE,\n                        'HISTORICAL",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:48:09.468198+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:50:14.957682+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                WITH HISTORICAL_TASKS AS (\n                    SELECT\n                        NAME              AS TASK_NAME,\n                        DATABASE_NAME,\n                        SCHEMA_NAME,\n                        STATE,\n                        QUERY_ID,\n                        SCHEDULED_TIME,\n                        QUERY_START_TIME,\n                        COMPLETED_TIME,\n                        ERROR_CODE,\n                        ERROR_MESSAGE,\n                        'HISTORICAL",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:50:15.436404+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:50:16.598845+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:53:10.155939+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                WITH HISTORICAL_TASKS AS (\n                    SELECT\n                        NAME              AS TASK_NAME,\n                        DATABASE_NAME,\n                        SCHEMA_NAME,\n                        STATE,\n                        QUERY_ID,\n                        SCHEDULED_TIME,\n                        QUERY_START_TIME,\n                        COMPLETED_TIME,\n                        ERROR_CODE,\n                        ERROR_MESSAGE,\n                        'HISTORICAL",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:53:11.392059+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:53:11.442495+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:53:12.657175+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:53:16.429382+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                WITH HISTORICAL_TASKS AS (\n                    SELECT\n                        NAME              AS TASK_NAME,\n                        DATABASE_NAME,\n                        SCHEMA_NAME,\n                        STATE,\n                        QUERY_ID,\n                        SCHEDULED_TIME,\n                        QUERY_START_TIME,\n                        COMPLETED_TIME,\n                        ERROR_CODE,\n                        ERROR_MESSAGE,\n                        'HISTORICAL",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:53:33.781065+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:53:33.864127+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                WITH HISTORICAL_TASKS AS (\n                    SELECT\n                        NAME              AS TASK_NAME,\n                        DATABASE_NAME,\n                        SCHEMA_NAME,\n                        STATE,\n                        QUERY_ID,\n                        SCHEDULED_TIME,\n                        QUERY_START_TIME,\n                        COMPLETED_TIME,\n                        ERROR_CODE,\n                        ERROR_MESSAGE,\n                        'HISTORICAL",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:53:38.000965+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH raw AS (\n \n    SELECT DRUG_NM, DRUG_STRG_QTY, BRAND_GENERIC_FLAG, GENERIC_MOELCULE_NAME  \n \n    FROM MODEL_V2.FACT_PATIENT_CLAIMS_RX\n \n    WHERE SYS_DATA_SOURCE = 'IQV_LAAD_EZN'\n \n      AND (DRUG_NM IS NOT NULL\n \n           OR DRUG_STRG_QTY IS NOT NULL\n \n           OR BRAND_GENERIC_FLAG IS NOT ",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:53:47.655628+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH raw AS (\n \n    SELECT DRUG_NM, DRUG_STRG_QTY, BRAND_GENERIC_FLAG, GENERIC_MOELCULE_NAME  \n \n    FROM MODEL_V2.FACT_PATIENT_CLAIMS_RX\n \n    WHERE SYS_DATA_SOURCE = 'IQV_LAAD_EZN'\n \n      AND (DRUG_NM IS NOT NULL\n \n           OR DRUG_STRG_QTY IS NOT NULL\n \n           OR BRAND_GENERIC_FLAG IS NOT ",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:54:21.065236+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH base_counts AS (\n\n    SELECT\n        'FACT_RX_ACTIVITY' AS TABLE_NAME,\n        'DISTINCT_PATIENT_COUNT' AS METRIC,\n        'VW_LAAD_BAY_L80507_RXPT' AS Source,\n        'FACT_PTNT_RX_ACTIVITY' AS Target,\n        (\n            SELECT COUNT(DISTINCT PATIENT_ID)\n            FROM CPH_DB_PROD.ENRICH_",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:54:40.993082+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH base_counts AS (\n\n    SELECT\n        'FACT_RX_ACTIVITY' AS TABLE_NAME,\n        'DISTINCT_PATIENT_COUNT' AS METRIC,\n        'VW_LAAD_BAY_L80507_RXPT' AS Source,\n        'FACT_PTNT_RX_ACTIVITY' AS Target,\n        (\n            SELECT COUNT(DISTINCT PATIENT_ID)\n            FROM CPH_DB_PROD.ENRICH_",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:56:44.631002+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH base_counts AS (\n\n    SELECT\n        'FACT_RX_ACTIVITY' AS TABLE_NAME,\n        'DISTINCT_PATIENT_COUNT' AS METRIC,\n        'VW_LAAD_BAY_L80507_RXPT' AS Source,\n        'FACT_PTNT_RX_ACTIVITY' AS Target,\n        (\n            SELECT COUNT(DISTINCT PATIENT_ID)\n            FROM CPH_DB_PROD.ENRICH_",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:56:47.173186+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH base_counts AS (\n\n    SELECT\n        'FACT_RX_ACTIVITY' AS TABLE_NAME,\n        'DISTINCT_PATIENT_COUNT' AS METRIC,\n        'VW_LAAD_BAY_L80507_RXPT' AS Source,\n        'FACT_PTNT_RX_ACTIVITY' AS Target,\n        (\n            SELECT COUNT(DISTINCT PATIENT_ID)\n            FROM CPH_DB_PROD.ENRICH_",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:57:22.336169+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T20:57:24.872029+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                WITH HISTORICAL_TASKS AS (\n                    SELECT\n                        NAME              AS TASK_NAME,\n                        DATABASE_NAME,\n                        SCHEMA_NAME,\n                        STATE,\n                        QUERY_ID,\n                        SCHEDULED_TIME,\n                        QUERY_START_TIME,\n                        COMPLETED_TIME,\n                        ERROR_CODE,\n                        ERROR_MESSAGE,\n                        'HISTORICAL",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T21:03:41.414788+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                WITH HISTORICAL_TASKS AS (\n                    SELECT\n                        NAME              AS TASK_NAME,\n                        DATABASE_NAME,\n                        SCHEMA_NAME,\n                        STATE,\n                        QUERY_ID,\n                        SCHEDULED_TIME,\n                        QUERY_START_TIME,\n                        COMPLETED_TIME,\n                        ERROR_CODE,\n                        ERROR_MESSAGE,\n                        'HISTORICAL",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T21:03:42.869161+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T21:04:02.158322+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T21:04:12.905551+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T21:05:15.046674+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                WITH HISTORICAL_TASKS AS (\n                    SELECT\n                        NAME              AS TASK_NAME,\n                        DATABASE_NAME,\n                        SCHEMA_NAME,\n                        STATE,\n                        QUERY_ID,\n                        SCHEDULED_TIME,\n                        QUERY_START_TIME,\n                        COMPLETED_TIME,\n                        ERROR_CODE,\n                        ERROR_MESSAGE,\n                        'HISTORICAL",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T21:05:15.146490+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T21:05:16.779742+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T21:05:34.292273+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                WITH HISTORICAL_TASKS AS (\n                    SELECT\n                        NAME              AS TASK_NAME,\n                        DATABASE_NAME,\n                        SCHEMA_NAME,\n                        STATE,\n                        QUERY_ID,\n                        SCHEDULED_TIME,\n                        QUERY_START_TIME,\n                        COMPLETED_TIME,\n                        ERROR_CODE,\n                        ERROR_MESSAGE,\n                        'HISTORICAL",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T21:05:34.556850+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T21:05:55.250475+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH base_counts AS (\n\n    SELECT\n        'FACT_RX_ACTIVITY' AS TABLE_NAME,\n        'DISTINCT_PATIENT_COUNT' AS METRIC,\n        'VW_LAAD_BAY_L80507_RXPT' AS Source,\n        'FACT_PTNT_RX_ACTIVITY' AS Target,\n        (\n            SELECT COUNT(DISTINCT PATIENT_ID)\n            FROM CPH_DB_PROD.ENRICH_",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T21:05:57.715035+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH base_counts AS (\n\n    SELECT\n        'FACT_RX_ACTIVITY' AS TABLE_NAME,\n        'DISTINCT_PATIENT_COUNT' AS METRIC,\n        'VW_LAAD_BAY_L80507_RXPT' AS Source,\n        'FACT_PTNT_RX_ACTIVITY' AS Target,\n        (\n            SELECT COUNT(DISTINCT PATIENT_ID)\n            FROM CPH_DB_PROD.ENRICH_",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T21:06:05.132528+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH row_counts AS (\n\n    SELECT 'VW_LAAD_BAY_L80507_PLN' AS TABLE_NM, \n           (SELECT COUNT(*) \n            FROM VW_LAAD_BAY_L80507_PLN \n            WHERE SYS_LOADED_ID = (\n                SELECT MAX(SYS_LOADED_ID) \n                FROM CPH_DB_PROD.ENRICH_V2.VW_LAAD_BAY_L80507_PLN\n            )",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T21:06:06.636712+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH row_counts AS (\n\n    SELECT 'VW_LAAD_BAY_L80507_PLN' AS TABLE_NM, \n           (SELECT COUNT(*) \n            FROM VW_LAAD_BAY_L80507_PLN \n            WHERE SYS_LOADED_ID = (\n                SELECT MAX(SYS_LOADED_ID) \n                FROM CPH_DB_PROD.ENRICH_V2.VW_LAAD_BAY_L80507_PLN\n            )",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T21:12:27.061468+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH row_counts AS (\n\n    SELECT 'VW_LAAD_BAY_L80507_PLN' AS TABLE_NM, \n           (SELECT COUNT(*) \n            FROM VW_LAAD_BAY_L80507_PLN \n            WHERE SYS_LOADED_ID = (\n                SELECT MAX(SYS_LOADED_ID) \n                FROM CPH_DB_PROD.ENRICH_V2.VW_LAAD_BAY_L80507_PLN\n            )",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T21:14:13.180110+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH row_counts AS (\n\n    SELECT 'VW_LAAD_BAY_L80507_PLN' AS TABLE_NM, \n           (SELECT COUNT(*) \n            FROM VW_LAAD_BAY_L80507_PLN \n            WHERE SYS_LOADED_ID = (\n                SELECT MAX(SYS_LOADED_ID) \n                FROM CPH_DB_PROD.ENRICH_V2.VW_LAAD_BAY_L80507_PLN\n            )",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T21:15:59.864280+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH row_counts AS (\n\n    SELECT 'VW_LAAD_BAY_L80507_PLN' AS TABLE_NM, \n           (SELECT COUNT(*) \n            FROM VW_LAAD_BAY_L80507_PLN \n            WHERE SYS_LOADED_ID = (\n                SELECT MAX(SYS_LOADED_ID) \n                FROM CPH_DB_PROD.ENRICH_V2.VW_LAAD_BAY_L80507_PLN\n            )",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T21:16:34.812721+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                WITH HISTORICAL_TASKS AS (\n                    SELECT\n                        NAME              AS TASK_NAME,\n                        DATABASE_NAME,\n                        SCHEMA_NAME,\n                        STATE,\n                        QUERY_ID,\n                        SCHEDULED_TIME,\n                        QUERY_START_TIME,\n                        COMPLETED_TIME,\n                        ERROR_CODE,\n                        ERROR_MESSAGE,\n                        'HISTORICAL",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T21:18:26.348365+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                WITH HISTORICAL_TASKS AS (\n                    SELECT\n                        NAME              AS TASK_NAME,\n                        DATABASE_NAME,\n                        SCHEMA_NAME,\n                        STATE,\n                        QUERY_ID,\n                        SCHEDULED_TIME,\n                        QUERY_START_TIME,\n                        COMPLETED_TIME,\n                        ERROR_CODE,\n                        ERROR_MESSAGE,\n                        'HISTORICAL",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T21:18:26.414237+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T21:18:27.739115+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T21:18:28.615487+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                WITH HISTORICAL_TASKS AS (\n                    SELECT\n                        NAME              AS TASK_NAME,\n                        DATABASE_NAME,\n                        SCHEMA_NAME,\n                        STATE,\n                        QUERY_ID,\n                        SCHEDULED_TIME,\n                        QUERY_START_TIME,\n                        COMPLETED_TIME,\n                        ERROR_CODE,\n                        ERROR_MESSAGE,\n                        'HISTORICAL",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T21:18:59.440700+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                WITH HISTORICAL_TASKS AS (\n                    SELECT\n                        NAME              AS TASK_NAME,\n                        DATABASE_NAME,\n                        SCHEMA_NAME,\n                        STATE,\n                        QUERY_ID,\n                        SCHEDULED_TIME,\n                        QUERY_START_TIME,\n                        COMPLETED_TIME,\n                        ERROR_CODE,\n                        ERROR_MESSAGE,\n                        'HISTORICAL",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T21:18:59.758508+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T21:19:06.235750+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH row_counts AS (\n\n    SELECT 'VW_LAAD_BAY_L80507_PLN' AS TABLE_NM, \n           (SELECT COUNT(*) \n            FROM VW_LAAD_BAY_L80507_PLN \n            WHERE SYS_LOADED_ID = (\n                SELECT MAX(SYS_LOADED_ID) \n                FROM CPH_DB_PROD.ENRICH_V2.VW_LAAD_BAY_L80507_PLN\n            )",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T21:19:08.507423+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH row_counts AS (\n\n    SELECT 'VW_LAAD_BAY_L80507_PLN' AS TABLE_NM, \n           (SELECT COUNT(*) \n            FROM VW_LAAD_BAY_L80507_PLN \n            WHERE SYS_LOADED_ID = (\n                SELECT MAX(SYS_LOADED_ID) \n                FROM CPH_DB_PROD.ENRICH_V2.VW_LAAD_BAY_L80507_PLN\n            )",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T21:19:53.550208+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH base_counts AS (\n\n    SELECT\n        'FACT_PATIENT_CLAIMS_RX' AS TABLE_NAME,\n        'DISTINCT_CLAIM_COUNT' AS METRIC,\n        'VW_LAAD_BAY_L80507_FACT, VW_LAAD_BAY_L80507_FACT' AS SOURCE,\n        'FACT_PATIENT_CLAIMS_RX' AS TARGET,\n        (\n            SELECT COUNT(DISTINCT CLAIM_ID)\n        ",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T21:20:03.462258+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH base_counts AS (\n\n    SELECT\n        'FACT_PATIENT_CLAIMS_RX' AS TABLE_NAME,\n        'DISTINCT_CLAIM_COUNT' AS METRIC,\n        'VW_LAAD_BAY_L80507_FACT, VW_LAAD_BAY_L80507_FACT' AS SOURCE,\n        'FACT_PATIENT_CLAIMS_RX' AS TARGET,\n        (\n            SELECT COUNT(DISTINCT CLAIM_ID)\n        ",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T21:22:53.847013+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\nWITH raw AS (\n    SELECT PTNT_BRTH_YR, PTNT_GNDR\n    FROM MODEL_V2.FACT_PATIENT_CLAIMS_RX AT (OFFSET => -60*60*24*0)\n    WHERE SYS_DATA_SOURCE = 'IQV_LAAD_EZN'\n      AND DATE_ID >= (\n          SELECT MIN(fill_date)\n          FROM IQVIA_BAYER_CDW_PROD_DATA_SHARE.RAW_CDW_LAAD.VW_LAAD_BAY_L80507_FACT\n",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T21:23:01.828457+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\nWITH raw AS (\n    SELECT PTNT_BRTH_YR, PTNT_GNDR\n    FROM MODEL_V2.FACT_PATIENT_CLAIMS_RX AT (OFFSET => -60*60*24*0)\n    WHERE SYS_DATA_SOURCE = 'IQV_LAAD_EZN'\n      AND DATE_ID >= (\n          SELECT MIN(fill_date)\n          FROM IQVIA_BAYER_CDW_PROD_DATA_SHARE.RAW_CDW_LAAD.VW_LAAD_BAY_L80507_FACT\n",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T21:24:47.691130+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH base_counts AS (\n\n    SELECT\n        'FACT_RX_ACTIVITY' AS TABLE_NAME,\n        'DISTINCT_PATIENT_COUNT' AS METRIC,\n        'VW_LAAD_BAY_L80507_RXPT' AS Source,\n        'FACT_PTNT_RX_ACTIVITY' AS Target,\n        (\n            SELECT COUNT(DISTINCT PATIENT_ID)\n            FROM CPH_DB_PROD.ENRICH_",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-06T21:24:50.432416+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH base_counts AS (\n\n    SELECT\n        'FACT_RX_ACTIVITY' AS TABLE_NAME,\n        'DISTINCT_PATIENT_COUNT' AS METRIC,\n        'VW_LAAD_BAY_L80507_RXPT' AS Source,\n        'FACT_PTNT_RX_ACTIVITY' AS Target,\n        (\n            SELECT COUNT(DISTINCT PATIENT_ID)\n            FROM CPH_DB_PROD.ENRICH_",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-07T03:58:19.416699+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-07T03:58:19.893508+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-07T03:58:19.983612+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                WITH HISTORICAL_TASKS AS (\n                    SELECT\n                        NAME              AS TASK_NAME,\n                        DATABASE_NAME,\n                        SCHEMA_NAME,\n                        STATE,\n                        QUERY_ID,\n                        SCHEDULED_TIME,\n                        QUERY_START_TIME,\n                        COMPLETED_TIME,\n                        ERROR_CODE,\n                        ERROR_MESSAGE,\n                        'HISTORICAL",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-07T03:58:21.152345+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                WITH HISTORICAL_TASKS AS (\n                    SELECT\n                        NAME              AS TASK_NAME,\n                        DATABASE_NAME,\n                        SCHEMA_NAME,\n                        STATE,\n                        QUERY_ID,\n                        SCHEDULED_TIME,\n                        QUERY_START_TIME,\n                        COMPLETED_TIME,\n                        ERROR_CODE,\n                        ERROR_MESSAGE,\n                        'HISTORICAL",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-07T03:59:00.537308+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH\n \ncurr_gender AS (\n \n  SELECT\n \n    PATIENT_GENDER,\n \n    COUNT(*) AS curr_cnt\n \n  FROM CPH_DB_PROD.ENRICH_V2.VW_LAAD_BAY_L80507_PATD\n \n  WHERE PATIENT_GENDER IS NOT NULL\n \n  GROUP BY PATIENT_GENDER\n \n),\n \nprev_gender AS (\n \n  SELECT\n \n    PATIENT_GENDER,\n \n    COUNT(*) AS prev_cnt\n \n  FROM CPH",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-07T03:59:11.213397+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH\n \ncurr_gender AS (\n \n  SELECT\n \n    PATIENT_GENDER,\n \n    COUNT(*) AS curr_cnt\n \n  FROM CPH_DB_PROD.ENRICH_V2.VW_LAAD_BAY_L80507_PATD\n \n  WHERE PATIENT_GENDER IS NOT NULL\n \n  GROUP BY PATIENT_GENDER\n \n),\n \nprev_gender AS (\n \n  SELECT\n \n    PATIENT_GENDER,\n \n    COUNT(*) AS prev_cnt\n \n  FROM CPH",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-07T03:59:49.271478+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH curr_entity_counts AS (\n\n  SELECT\n    COUNT(DISTINCT PROVIDER_ID) AS provider_cnt,\n    COUNT(DISTINCT PATIENT_ID)  AS patient_cnt,\n    COUNT(DISTINCT CLAIM_ID)    AS claim_cnt\n  FROM ENRICH_V2.VW_LAAD_BAY_L80507_FACT\n),\n\nprev_entity_counts AS (\n\n  SELECT\n    COUNT(DISTINCT PROVIDER_ID) AS provi",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-07T03:59:52.023654+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH curr_entity_counts AS (\n\n  SELECT\n    COUNT(DISTINCT PROVIDER_ID) AS provider_cnt,\n    COUNT(DISTINCT PATIENT_ID)  AS patient_cnt,\n    COUNT(DISTINCT CLAIM_ID)    AS claim_cnt\n  FROM ENRICH_V2.VW_LAAD_BAY_L80507_FACT\n),\n\nprev_entity_counts AS (\n\n  SELECT\n    COUNT(DISTINCT PROVIDER_ID) AS provi",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-07T04:04:41.874983+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH\ncurr_prd_lynkuet AS (\n  SELECT COUNT(DISTINCT USC_CODE) AS curr_cnt\n  FROM ENRICH_V2.VW_LAAD_BAY_L80507_PRD\n  WHERE PRODUCT_NAME ILIKE '%LYNKUET%'\n),\nprev_prd_lynkuet AS (\n  SELECT COUNT(DISTINCT USC_CODE) AS prev_cnt\n  FROM ENRICH_V2.VW_LAAD_BAY_L80507_PRD\n  AT (OFFSET => -60*60*24*7)\n  WHERE ",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-07T04:04:44.480013+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH\ncurr_prd_lynkuet AS (\n  SELECT COUNT(DISTINCT USC_CODE) AS curr_cnt\n  FROM ENRICH_V2.VW_LAAD_BAY_L80507_PRD\n  WHERE PRODUCT_NAME ILIKE '%LYNKUET%'\n),\nprev_prd_lynkuet AS (\n  SELECT COUNT(DISTINCT USC_CODE) AS prev_cnt\n  FROM ENRICH_V2.VW_LAAD_BAY_L80507_PRD\n  AT (OFFSET => -60*60*24*7)\n  WHERE ",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-07T04:07:42.057335+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-07T04:07:42.137218+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                WITH HISTORICAL_TASKS AS (\n                    SELECT\n                        NAME              AS TASK_NAME,\n                        DATABASE_NAME,\n                        SCHEMA_NAME,\n                        STATE,\n                        QUERY_ID,\n                        SCHEDULED_TIME,\n                        QUERY_START_TIME,\n                        COMPLETED_TIME,\n                        ERROR_CODE,\n                        ERROR_MESSAGE,\n                        'HISTORICAL",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-07T04:09:09.883776+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\nWITH raw AS (\n    SELECT PTNT_BRTH_YR, PTNT_GNDR\n    FROM MODEL_V2.FACT_PATIENT_CLAIMS_RX AT (OFFSET => -60*60*24*0)\n    WHERE SYS_DATA_SOURCE = 'IQV_LAAD_EZN'\n      AND DATE_ID >= (\n          SELECT MIN(fill_date)\n          FROM IQVIA_BAYER_CDW_PROD_DATA_SHARE.RAW_CDW_LAAD.VW_LAAD_BAY_L80507_FACT\n",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-07T04:09:15.712023+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\nWITH raw AS (\n    SELECT PTNT_BRTH_YR, PTNT_GNDR\n    FROM MODEL_V2.FACT_PATIENT_CLAIMS_RX AT (OFFSET => -60*60*24*0)\n    WHERE SYS_DATA_SOURCE = 'IQV_LAAD_EZN'\n      AND DATE_ID >= (\n          SELECT MIN(fill_date)\n          FROM IQVIA_BAYER_CDW_PROD_DATA_SHARE.RAW_CDW_LAAD.VW_LAAD_BAY_L80507_FACT\n",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-07T04:09:19.182347+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\nWITH raw AS (\n    SELECT PTNT_BRTH_YR, PTNT_GNDR\n    FROM MODEL_V2.FACT_PATIENT_CLAIMS_RX AT (OFFSET => -60*60*24*0)\n    WHERE SYS_DATA_SOURCE = 'IQV_LAAD_EZN'\n      AND DATE_ID >= (\n          SELECT MIN(fill_date)\n          FROM IQVIA_BAYER_CDW_PROD_DATA_SHARE.RAW_CDW_LAAD.VW_LAAD_BAY_L80507_FACT\n",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-07T04:09:21.352914+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\nWITH raw AS (\n    SELECT PTNT_BRTH_YR, PTNT_GNDR\n    FROM MODEL_V2.FACT_PATIENT_CLAIMS_RX AT (OFFSET => -60*60*24*0)\n    WHERE SYS_DATA_SOURCE = 'IQV_LAAD_EZN'\n      AND DATE_ID >= (\n          SELECT MIN(fill_date)\n          FROM IQVIA_BAYER_CDW_PROD_DATA_SHARE.RAW_CDW_LAAD.VW_LAAD_BAY_L80507_FACT\n",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-07T04:10:38.385089+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-07T04:10:41.885177+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                WITH HISTORICAL_TASKS AS (\n                    SELECT\n                        NAME              AS TASK_NAME,\n                        DATABASE_NAME,\n                        SCHEMA_NAME,\n                        STATE,\n                        QUERY_ID,\n                        SCHEDULED_TIME,\n                        QUERY_START_TIME,\n                        COMPLETED_TIME,\n                        ERROR_CODE,\n                        ERROR_MESSAGE,\n                        'HISTORICAL",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-07T05:19:13.426839+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                WITH HISTORICAL_TASKS AS (\n                    SELECT\n                        NAME              AS TASK_NAME,\n                        DATABASE_NAME,\n                        SCHEMA_NAME,\n                        STATE,\n                        QUERY_ID,\n                        SCHEDULED_TIME,\n                        QUERY_START_TIME,\n                        COMPLETED_TIME,\n                        ERROR_CODE,\n                        ERROR_MESSAGE,\n                        'HISTORICAL",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-07T05:19:14.036880+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-07T05:19:14.416771+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-07T05:19:15.018742+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                WITH HISTORICAL_TASKS AS (\n                    SELECT\n                        NAME              AS TASK_NAME,\n                        DATABASE_NAME,\n                        SCHEMA_NAME,\n                        STATE,\n                        QUERY_ID,\n                        SCHEDULED_TIME,\n                        QUERY_START_TIME,\n                        COMPLETED_TIME,\n                        ERROR_CODE,\n                        ERROR_MESSAGE,\n                        'HISTORICAL",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-07T05:19:16.119627+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-07T05:19:16.556329+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                WITH HISTORICAL_TASKS AS (\n                    SELECT\n                        NAME              AS TASK_NAME,\n                        DATABASE_NAME,\n                        SCHEMA_NAME,\n                        STATE,\n                        QUERY_ID,\n                        SCHEDULED_TIME,\n                        QUERY_START_TIME,\n                        COMPLETED_TIME,\n                        ERROR_CODE,\n                        ERROR_MESSAGE,\n                        'HISTORICAL",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-07T05:19:18.840676+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-07T05:19:20.259591+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                WITH HISTORICAL_TASKS AS (\n                    SELECT\n                        NAME              AS TASK_NAME,\n                        DATABASE_NAME,\n                        SCHEMA_NAME,\n                        STATE,\n                        QUERY_ID,\n                        SCHEDULED_TIME,\n                        QUERY_START_TIME,\n                        COMPLETED_TIME,\n                        ERROR_CODE,\n                        ERROR_MESSAGE,\n                        'HISTORICAL",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-07T05:20:07.941324+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\nWITH raw AS (\n    SELECT PTNT_BRTH_YR, PTNT_GNDR\n    FROM MODEL_V2.FACT_PATIENT_CLAIMS_RX AT (OFFSET => -60*60*24*0)\n    WHERE SYS_DATA_SOURCE = 'IQV_LAAD_EZN'\n      AND DATE_ID >= (\n          SELECT MIN(fill_date)\n          FROM IQVIA_BAYER_CDW_PROD_DATA_SHARE.RAW_CDW_LAAD.VW_LAAD_BAY_L80507_FACT\n",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-07T05:20:13.789890+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\nWITH raw AS (\n    SELECT PTNT_BRTH_YR, PTNT_GNDR\n    FROM MODEL_V2.FACT_PATIENT_CLAIMS_RX AT (OFFSET => -60*60*24*0)\n    WHERE SYS_DATA_SOURCE = 'IQV_LAAD_EZN'\n      AND DATE_ID >= (\n          SELECT MIN(fill_date)\n          FROM IQVIA_BAYER_CDW_PROD_DATA_SHARE.RAW_CDW_LAAD.VW_LAAD_BAY_L80507_FACT\n",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-07T05:20:30.645770+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                WITH HISTORICAL_TASKS AS (\n                    SELECT\n                        NAME              AS TASK_NAME,\n                        DATABASE_NAME,\n                        SCHEMA_NAME,\n                        STATE,\n                        QUERY_ID,\n                        SCHEDULED_TIME,\n                        QUERY_START_TIME,\n                        COMPLETED_TIME,\n                        ERROR_CODE,\n                        ERROR_MESSAGE,\n                        'HISTORICAL",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-07T05:20:31.427155+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-07T05:20:57.153018+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                WITH HISTORICAL_TASKS AS (\n                    SELECT\n                        NAME              AS TASK_NAME,\n                        DATABASE_NAME,\n                        SCHEMA_NAME,\n                        STATE,\n                        QUERY_ID,\n                        SCHEDULED_TIME,\n                        QUERY_START_TIME,\n                        COMPLETED_TIME,\n                        ERROR_CODE,\n                        ERROR_MESSAGE,\n                        'HISTORICAL",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-07T05:21:19.612533+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-07T05:24:53.518369+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                WITH HISTORICAL_TASKS AS (\n                    SELECT\n                        NAME              AS TASK_NAME,\n                        DATABASE_NAME,\n                        SCHEMA_NAME,\n                        STATE,\n                        QUERY_ID,\n                        SCHEDULED_TIME,\n                        QUERY_START_TIME,\n                        COMPLETED_TIME,\n                        ERROR_CODE,\n                        ERROR_MESSAGE,\n                        'HISTORICAL",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-07T05:24:53.639119+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-07T05:34:16.516936+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-07T05:34:19.243877+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                WITH HISTORICAL_TASKS AS (\n                    SELECT\n                        NAME              AS TASK_NAME,\n                        DATABASE_NAME,\n                        SCHEMA_NAME,\n                        STATE,\n                        QUERY_ID,\n                        SCHEDULED_TIME,\n                        QUERY_START_TIME,\n                        COMPLETED_TIME,\n                        ERROR_CODE,\n                        ERROR_MESSAGE,\n                        'HISTORICAL",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-07T07:04:59.805468+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-07-07T07:05:04.013232+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                WITH HISTORICAL_TASKS AS (\n                    SELECT\n                        NAME              AS TASK_NAME,\n                        DATABASE_NAME,\n                        SCHEMA_NAME,\n                        STATE,\n                        QUERY_ID,\n                        SCHEDULED_TIME,\n                        QUERY_START_TIME,\n                        COMPLETED_TIME,\n                        ERROR_CODE,\n                        ERROR_MESSAGE,\n                        'HISTORICAL",
+    "result": null
+  }
+]

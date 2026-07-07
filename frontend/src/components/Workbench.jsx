@@ -117,7 +117,7 @@ function Collapsible({ title, badge, badgeColor, defaultOpen = false, children }
 const SEVERITY_COLOR = { Critical: '#e74c3c', High: '#e67e22', Medium: '#f1c40f', Low: '#2ecc71' }
 const CONFIDENCE_COLOR = { High: '#2ecc71', Medium: '#f1c40f', Low: '#e74c3c' }
 
-function RcaReport({ rca, selected, busy, onSuggestFix }) {
+function RcaReport({ rca, selected, busy, onSuggestFix, onAddKnowledge }) {
   const ia = rca.impact_assessment || {}
   const rem = rca.remediation || {}
   const sevColor = SEVERITY_COLOR[ia.business_severity] || 'var(--border)'
@@ -155,6 +155,50 @@ function RcaReport({ rca, selected, busy, onSuggestFix }) {
       {/* ── Evidence (Metadata First) ─────────────────────────────────────── */}
       <strong>Evidence</strong>
       <ul className="evidence">{(rca.evidence || []).map((e, i) => <li key={i}>{e}</li>)}</ul>
+
+      {/* ── Code Analysis ─────────────────────────────────────────────────── */}
+      {rca.code_analysis && (rca.code_analysis.llm_explanation || rca.code_analysis.task_sql) && (
+        <Collapsible title="Code Analysis" defaultOpen>
+          {rca.code_analysis.llm_explanation && (
+            <p style={{ fontSize: 13, margin: '0 0 10px', whiteSpace: 'pre-line' }}>
+              {rca.code_analysis.llm_explanation}
+            </p>
+          )}
+          {rca.code_analysis.task_sql && (
+            <div>
+              <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 4 }}>Task / Procedure SQL</div>
+              <pre style={{
+                fontSize: 11, lineHeight: 1.5, margin: 0, whiteSpace: 'pre-wrap',
+                background: 'var(--code-bg)', padding: 10, borderRadius: 6, maxHeight: 220, overflow: 'auto',
+              }}>{rca.code_analysis.task_sql}</pre>
+            </div>
+          )}
+          {rca.code_analysis.procedure_io && (rca.code_analysis.procedure_io.inputs?.length > 0 || rca.code_analysis.procedure_io.outputs?.length > 0) && (
+            <div style={{ marginTop: 8, fontSize: 12 }}>
+              {rca.code_analysis.procedure_io.inputs?.length > 0 && (
+                <span className="muted">Inputs: {rca.code_analysis.procedure_io.inputs.slice(0, 5).join(', ')}</span>
+              )}
+              {rca.code_analysis.procedure_io.outputs?.length > 0 && (
+                <span className="muted" style={{ marginLeft: 12 }}>Outputs: {rca.code_analysis.procedure_io.outputs.slice(0, 5).join(', ')}</span>
+              )}
+            </div>
+          )}
+        </Collapsible>
+      )}
+
+      {/* ── Knowledge Applied ─────────────────────────────────────────────── */}
+      {rca.knowledge_applied?.length > 0 && (
+        <Collapsible title="Domain Knowledge Applied" defaultOpen={false}>
+          {rca.knowledge_applied.map((rule, i) => (
+            <div key={i} style={{ marginBottom: 8, fontSize: 12, padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
+              <div><strong>Pattern:</strong> {rule.PATTERN}</div>
+              <div><strong>Root Cause:</strong> {rule.ROOT_CAUSE}</div>
+              <div><strong>Fix:</strong> {rule.FIX}</div>
+              {rule.ADDED_BY && <div className="muted">Added by: {rule.ADDED_BY} ({rule.ADDED_ON})</div>}
+            </div>
+          ))}
+        </Collapsible>
+      )}
 
       {/* ── Impact Assessment ──────────────────────────────────────────────── */}
       {(ia.impacted_tables?.length > 0 || ia.impacted_pipelines?.length > 0) && (
@@ -267,11 +311,64 @@ function RcaReport({ rca, selected, busy, onSuggestFix }) {
         )}
       </Collapsible>
 
-      <div style={{ marginTop: 16 }}>
+      <div style={{ marginTop: 16, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
         <button className="btn purple" disabled={busy === 'fix' || selected?.id?.startsWith('dq_')}
           onClick={onSuggestFix}>
           Identify &amp; Suggest Fix
         </button>
+        <button className="btn sec" onClick={() => onAddKnowledge?.(rca)}>
+          + Add to Knowledge Base
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function KnowledgeForm({ rca, onClose }) {
+  const [pattern, setPattern] = useState((rca?.evidence?.[2] || rca?.summary || '').slice(0, 200))
+  const [category, setCategory] = useState(rca?.category || 'Unknown Failure')
+  const [rootCause, setRootCause] = useState(rca?.summary || '')
+  const [fix, setFixText] = useState(rca?.remediation?.immediate_fix || '')
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  const submit = () => {
+    setSaving(true)
+    api.addRcaKnowledge({ pattern, category, root_cause: rootCause, fix, added_by: 'user' })
+      .then(() => { setSaved(true); setTimeout(onClose, 1500) })
+      .catch(() => setSaving(false))
+  }
+
+  return (
+    <div className="card" style={{ border: '2px solid var(--accent)' }}>
+      <h3 style={{ margin: '0 0 12px' }}>Add to Knowledge Base</h3>
+      <p className="muted" style={{ fontSize: 12, margin: '0 0 10px' }}>
+        This knowledge will be used by the RCA agent in future analyses when a similar failure occurs.
+      </p>
+      <div className="field">
+        <label>Error Pattern (matched against future failures)</label>
+        <input type="text" value={pattern} onChange={(e) => setPattern(e.target.value)} />
+      </div>
+      <div className="field">
+        <label>Category</label>
+        <select value={category} onChange={(e) => setCategory(e.target.value)}>
+          {['Code Failure', 'Data Quality Failure', 'Dependency Failure', 'Infrastructure Failure', 'Data Availability Failure', 'Unknown Failure']
+            .map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+      </div>
+      <div className="field">
+        <label>Root Cause</label>
+        <textarea rows={2} value={rootCause} onChange={(e) => setRootCause(e.target.value)} />
+      </div>
+      <div className="field">
+        <label>Fix / Resolution</label>
+        <textarea rows={2} value={fix} onChange={(e) => setFixText(e.target.value)} />
+      </div>
+      <div style={{ display: 'flex', gap: 10 }}>
+        <button className="btn" disabled={saving || !pattern} onClick={submit}>
+          {saved ? 'Saved!' : saving ? 'Saving...' : 'Save Knowledge'}
+        </button>
+        <button className="btn sec" onClick={onClose}>Cancel</button>
       </div>
     </div>
   )
@@ -284,6 +381,7 @@ export default function Workbench({ activePipeline, onSelect, onReportError, onB
   const [test, setTest] = useState(null)
   const [busy, setBusy] = useState('')
   const [hasActioned, setHasActioned] = useState(!!activePipeline)
+  const [showKnowledgeForm, setShowKnowledgeForm] = useState(false)
 
   useEffect(() => { if (activePipeline) { setSelected(activePipeline); setHasActioned(true); runRCA(activePipeline.id) } }, [activePipeline])
 
@@ -342,7 +440,12 @@ export default function Workbench({ activePipeline, onSelect, onReportError, onB
           selected={selected}
           busy={busy}
           onSuggestFix={suggestFix}
+          onAddKnowledge={() => setShowKnowledgeForm(true)}
         />
+      )}
+
+      {showKnowledgeForm && rca && (
+        <KnowledgeForm rca={rca} onClose={() => setShowKnowledgeForm(false)} />
       )}
 
       {busy === 'fix' && <div className="card spinner">Fix agent working…</div>}

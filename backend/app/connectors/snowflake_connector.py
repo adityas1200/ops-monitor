@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
+from app.connectors.sql_guardrail import check_sql, classify_sql, log_sql, submit_for_approval
 from app.connectors.status import normalize_task_result
 from app.core.config import (get_task_monitoring_config, interpret_snowflake_error, is_sso_auth,
                              load_settings, snowflake_configured)
@@ -268,6 +269,7 @@ class SnowflakeConnector:
                 range_from,
                 range_to,
             )
+            log_sql(sql[:500], "monitoring:telemetry", "READ", allowed=True)
             cur.execute(sql, params)
             for row in cur.fetchall():
                 (task_name, database_name, schema_name, state, task_result, scheduled_time,
@@ -306,30 +308,87 @@ class SnowflakeConnector:
             return ["(Snowflake not configured)"]
         return [f"(fetch logs from Snowflake query/task history for {log_ref})"]
 
+    # ---- SQL execution with guardrails ---------------------------------
+    def _allowed_write_databases(self) -> List[str]:
+        """Databases where DDL/DML is permitted (clones and preprod only)."""
+        sf = self.settings.get("snowflake", {})
+        allowed = []
+        preprod = (sf.get("preprod_account") or "").strip()
+        if preprod:
+            allowed.append(preprod)
+        # Clone databases created by the tool follow a naming convention
+        allowed.append("CLONE_")
+        allowed.append("_CLONE")
+        allowed.append("_PREPROD")
+        allowed.append("PREPROD_")
+        return allowed
+
+    def _production_databases(self) -> List[str]:
+        """Known production database names."""
+        sf = self.settings.get("snowflake", {})
+        db = (sf.get("database") or "").strip()
+        return [db] if db else []
+
+    def _execute_with_guardrail(self, sql: str, source: str = "unknown",
+                                allow_write: bool = False) -> Dict[str, Any]:
+        """Execute SQL with guardrail checks. Returns result or blocks with approval request."""
+        if not self._configured():
+            return {"executed": False, "sql": sql, "error": "Snowflake not configured"}
+
+        classification = classify_sql(sql)
+
+        # Log all SQL (READ and WRITE)
+        if classification == "WRITE" and not allow_write:
+            guard = check_sql(sql, self._production_databases(), self._allowed_write_databases(), source)
+            if not guard["allowed"]:
+                log_sql(sql, source, classification, allowed=False, result="BLOCKED")
+                approval = submit_for_approval(sql, source, {"reason": guard["reason"]})
+                return {
+                    "executed": False,
+                    "sql": sql,
+                    "error": f"BLOCKED: {guard['reason']}",
+                    "approval_id": approval["id"],
+                    "requires_approval": True,
+                }
+
+        # Execute
+        try:
+            cur = self._connect().cursor()
+            cur.execute(sql)
+            rows = cur.fetchall() if classification == "READ" else []
+            log_sql(sql, source, classification, allowed=True, result="SUCCESS")
+            return {"executed": True, "sql": sql, "rows": rows}
+        except Exception as e:  # noqa: BLE001
+            log_sql(sql, source, classification, allowed=True, result=f"ERROR: {str(e)[:200]}")
+            return {"executed": False, "sql": sql, "error": str(e)}
+
     # ---- zero-copy clone (Test agent) --------------------------------
     def create_zero_copy_clone(self, database: str, clone_name: str,
                                environment: str = "PREPROD") -> Dict[str, Any]:
         ddl = f"CREATE OR REPLACE DATABASE {clone_name} CLONE {database};"
         if not self._configured():
             return {"executed": False, "error": "Snowflake not configured", "ddl": ddl, "clone_name": clone_name}
-        try:
+        # Clone creation is allowed on preprod targets
+        result = self._execute_with_guardrail(ddl, source="test_agent:clone", allow_write=True)
+        if result["executed"]:
             target = self.settings["snowflake"].get("preprod_account") or "current"
-            cur = self._connect().cursor()
-            cur.execute(ddl)
             return {"executed": True, "ddl": ddl, "clone_name": clone_name,
                     "environment": environment, "target_account": target}
-        except Exception as e:  # noqa: BLE001
-            return {"executed": False, "error": str(e), "ddl": ddl, "clone_name": clone_name}
+        return {"executed": False, "error": result.get("error", "Unknown"), "ddl": ddl, "clone_name": clone_name}
 
-    def run_query(self, sql: str) -> Dict[str, Any]:
-        if not self._configured():
-            return {"executed": False, "sql": sql, "error": "Snowflake not configured"}
-        try:
-            cur = self._connect().cursor()
-            cur.execute(sql)
-            return {"executed": True, "sql": sql, "rows": cur.fetchall()}
-        except Exception as e:  # noqa: BLE001
-            return {"executed": False, "sql": sql, "error": str(e)}
+    def run_query(self, sql: str, source: str = "unknown",
+                  allow_write: bool = False) -> Dict[str, Any]:
+        """Execute a SQL query with guardrail protection.
+
+        DDL/DML on production is blocked unless allow_write=True.
+        All queries are logged to the audit trail.
+        """
+        return self._execute_with_guardrail(sql, source=source, allow_write=allow_write)
 
     def drop_clone(self, clone_name: str) -> Dict[str, Any]:
-        return self.run_query(f"DROP DATABASE IF EXISTS {clone_name};")
+        # Clone drops are allowed (they only affect clone databases)
+        return self._execute_with_guardrail(
+            f"DROP DATABASE IF EXISTS {clone_name};",
+            source="test_agent:drop_clone",
+            allow_write=True,
+        )

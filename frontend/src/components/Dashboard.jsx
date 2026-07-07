@@ -163,10 +163,118 @@ function TasksView({ data, status, nameFilter, loading, configured, onRunRCA, on
   )
 }
 
+function DQDetailPopup({ qcId, subjectArea, cached, onLoaded, onClose }) {
+  const [details, setDetails] = useState(cached || null)
+  const [loading, setLoading] = useState(!cached)
+
+  useEffect(() => {
+    if (cached) return
+    api.dqDetails(qcId, subjectArea)
+      .then((d) => { setDetails(d); onLoaded?.(qcId, subjectArea, d) })
+      .catch((e) => setDetails({ error: e.message }))
+      .finally(() => setLoading(false))
+  }, [qcId, subjectArea, cached])
+
+  const rule = details?.rule
+  const sqlResults = details?.sql_results
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: 'rgba(0,0,0,.5)', backdropFilter: 'blur(2px)',
+    }} onClick={onClose}>
+      <div className="card" style={{ width: '90vw', maxWidth: 1000, maxHeight: '90vh', overflow: 'auto', margin: 20 }}
+        onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, position: 'sticky', top: 0, background: 'var(--panel)', paddingBottom: 8 }}>
+          <h3 style={{ margin: 0 }}>DQ Check Details — QC {qcId}</h3>
+          <button className="btn sec" onClick={onClose} style={{ padding: '4px 10px' }}>✕</button>
+        </div>
+        {loading && <p className="spinner">Loading rule details and executing SQL...</p>}
+        {details?.error && <p style={{ color: 'var(--red)' }}>Error: {details.error}</p>}
+        {details && !details.error && !details.found && (
+          <p className="muted">No rule definition found for QC ID "{qcId}" (subject area: {subjectArea || 'any'}) in the configured rules table.</p>
+        )}
+        {rule && (
+          <div>
+            {/* Rule metadata */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 16px', marginBottom: 14, fontSize: 12 }}>
+              {rule.QC_DESCRIPTION && <div style={{ gridColumn: '1 / -1' }}><strong>Description:</strong> {rule.QC_DESCRIPTION}</div>}
+              {rule.CHECK_TYPE && <div><strong>Check Type:</strong> {rule.CHECK_TYPE}</div>}
+              {rule.SOURCE_TABLE && <div><strong>Source Table:</strong> {rule.SOURCE_TABLE}</div>}
+              {rule.FREQUENCY && <div><strong>Frequency:</strong> {rule.FREQUENCY}</div>}
+              {rule.DATA_VENDOR && <div><strong>Data Vendor:</strong> {rule.DATA_VENDOR}</div>}
+              {rule.LOWER_THRESHOLD && <div><strong>Lower Threshold:</strong> {rule.LOWER_THRESHOLD}</div>}
+              {rule.UPPER_THRESHOLD && <div><strong>Upper Threshold:</strong> {rule.UPPER_THRESHOLD}</div>}
+            </div>
+
+            {/* SQL Code */}
+            {rule.SQL_CODE && (
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 4 }}>SQL Code</div>
+                <pre style={{
+                  margin: 0, whiteSpace: 'pre-wrap', fontSize: 11, lineHeight: 1.5,
+                  background: 'var(--code-bg)', padding: 10, borderRadius: 6, maxHeight: 220, overflow: 'auto',
+                }}>{rule.SQL_CODE}</pre>
+              </div>
+            )}
+
+            {/* SQL Execution Results */}
+            {sqlResults && (
+              <div>
+                <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 6 }}>
+                  SQL Results
+                  {sqlResults.executed && <span className="muted" style={{ fontWeight: 400, marginLeft: 8 }}>({sqlResults.row_count} row{sqlResults.row_count !== 1 ? 's' : ''})</span>}
+                  {cached && <span className="muted" style={{ fontWeight: 400, marginLeft: 8 }}>(cached)</span>}
+                </div>
+                {!sqlResults.executed && (
+                  <p style={{ color: 'var(--red)', fontSize: 12 }}>SQL execution failed: {sqlResults.error}</p>
+                )}
+                {sqlResults.executed && sqlResults.rows?.length > 0 && (
+                  <div style={{ overflow: 'auto' }}>
+                    <table style={{ fontSize: 11 }}>
+                      <thead>
+                        <tr>
+                          {sqlResults.columns.map((col) => <th key={col}>{col}</th>)}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sqlResults.rows.map((row, i) => (
+                          <tr key={i}>
+                            {sqlResults.columns.map((col) => <td key={col}>{row[col] ?? '—'}</td>)}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                {sqlResults.executed && sqlResults.rows?.length === 0 && (
+                  <p className="muted" style={{ fontSize: 12 }}>Query returned 0 rows — check passed.</p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+const dqDetailsCache = {}
+
 function DQView({ data, status, nameFilter, loading, configured, onSelect, onRunRCA }) {
   const allChecks = data?.all_checks || []
   const [sortCol, setSortCol] = useState('status')
   const [sortDir, setSortDir] = useState('asc')
+  const [detailCheck, setDetailCheck] = useState(null)
+
+  const getCached = (qcId, subjectArea) => {
+    const key = `${qcId}__${subjectArea || ''}`
+    return dqDetailsCache[key] || null
+  }
+  const onDetailLoaded = (qcId, subjectArea, result) => {
+    const key = `${qcId}__${subjectArea || ''}`
+    dqDetailsCache[key] = result
+  }
 
   const handleSort = useCallback((col) => {
     setSortCol((prev) => {
@@ -222,7 +330,9 @@ function DQView({ data, status, nameFilter, loading, configured, onSelect, onRun
               <td className="muted" style={{ maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {c.error || '—'}
               </td>
-              <td>
+              <td style={{ whiteSpace: 'nowrap' }}>
+                <button className="btn sec" style={{ marginRight: 6, padding: '5px 10px', fontSize: 11 }}
+                  onClick={(e) => { e.stopPropagation(); setDetailCheck({ qcId: c.name, subjectArea: c.table_name }) }}>View Details</button>
                 {(c.status === 'FAILED' || c.status === 'DELAYED') && (
                   <button className="btn" onClick={(e) => { e.stopPropagation(); onRunRCA?.(c) }}>Run RCA</button>
                 )}
@@ -244,6 +354,15 @@ function DQView({ data, status, nameFilter, loading, configured, onSelect, onRun
           )}
         </tbody>
         </table>
+      )}
+      {detailCheck && (
+        <DQDetailPopup
+          qcId={detailCheck.qcId}
+          subjectArea={detailCheck.subjectArea}
+          cached={getCached(detailCheck.qcId, detailCheck.subjectArea)}
+          onLoaded={onDetailLoaded}
+          onClose={() => setDetailCheck(null)}
+        />
       )}
     </LoadingOverlay>
   )

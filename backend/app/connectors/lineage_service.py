@@ -370,6 +370,83 @@ class LineageService:
 
         return rows
 
+    # ---- Object definition fetching ----------------------------------------
+
+    def fetch_object_definition(
+        self,
+        database: str,
+        schema: str,
+        object_name: str,
+        object_type: str = "task",
+    ) -> Optional[str]:
+        """
+        Fetch the SQL definition of a Snowflake object (task, procedure, or view).
+
+        Returns the SQL body as a string (up to 4000 chars), or None if unavailable.
+        For tasks that CALL a procedure, returns the procedure body instead.
+        """
+        if not self.sf._configured() or not database or not schema or not object_name:
+            return None
+        try:
+            cur = self.sf._connect().cursor()
+            if object_type == "view":
+                if not _IDENTIFIER_RE.match(database):
+                    return None
+                cur.execute(
+                    f"SELECT VIEW_DEFINITION FROM {database}.INFORMATION_SCHEMA.VIEWS"
+                    f" WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s LIMIT 1",
+                    (schema, object_name),
+                )
+                row = cur.fetchone()
+                return (row[0][:4000] if row and row[0] else None)
+
+            if object_type == "procedure":
+                if not _IDENTIFIER_RE.match(database):
+                    return None
+                cur.execute(
+                    f"SELECT PROCEDURE_DEFINITION FROM {database}.INFORMATION_SCHEMA.PROCEDURES"
+                    f" WHERE PROCEDURE_SCHEMA = %s AND PROCEDURE_NAME = %s LIMIT 1",
+                    (schema, object_name),
+                )
+                row = cur.fetchone()
+                return (row[0][:4000] if row and row[0] else None)
+
+            # Default: task — fetch DEFINITION, and if it CALLs a proc, fetch that too
+            cur.execute(
+                """
+                SELECT DEFINITION
+                FROM SNOWFLAKE.ACCOUNT_USAGE.TASKS
+                WHERE DATABASE_NAME = %s AND SCHEMA_NAME = %s AND NAME = %s
+                  AND DELETED IS NULL
+                LIMIT 1
+                """,
+                (database, schema, object_name),
+            )
+            row = cur.fetchone()
+            task_body = (row[0] if row else "") or ""
+            if not task_body:
+                return None
+
+            proc_match = _CALL_RE.search(task_body)
+            if proc_match:
+                proc_ref = proc_match.group(1)
+                p_parts = proc_ref.split(".")
+                p_db = p_parts[0] if len(p_parts) > 2 else database
+                p_schema = p_parts[-2] if len(p_parts) > 1 else schema
+                p_name = p_parts[-1]
+                if _IDENTIFIER_RE.match(p_db):
+                    cur.execute(
+                        f"SELECT PROCEDURE_DEFINITION FROM {p_db}.INFORMATION_SCHEMA.PROCEDURES"
+                        f" WHERE PROCEDURE_SCHEMA = %s AND PROCEDURE_NAME = %s LIMIT 1",
+                        (p_schema, p_name),
+                    )
+                    proc_row = cur.fetchone()
+                    if proc_row and proc_row[0]:
+                        return proc_row[0][:4000]
+            return task_body[:4000]
+        except Exception:  # noqa: BLE001
+            return None
+
     # ---- Procedure-driven I/O resolution ---------------------------------
 
     def resolve_task_procedure_io(

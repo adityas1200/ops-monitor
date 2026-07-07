@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from app.connectors.snowflake_connector import SnowflakeConnector
+from app.connectors.sql_guardrail import log_sql
 from app.core.config import (get_dq_monitoring_config, load_settings,
                              platforms_configured, snowflake_configured)
 
@@ -103,6 +104,7 @@ class DQConnector:
                 ORDER BY TRY_TO_TIMESTAMP(RUN_DATE, 'YYYYMMDD_HH24MISS') DESC NULLS LAST
                 LIMIT 500
             """
+            log_sql(sql[:300], "dq_connector:read_results", "READ", allowed=True)
             cur.execute(sql, params)
             for i, row in enumerate(cur.fetchall()):
                 run_date, qc_id, subject_area, check_type, pass_count, fail_count, status, description = row
@@ -134,6 +136,85 @@ class DQConnector:
             self.last_error = str(e)
             self.sf._conn = None
         return records
+
+    def fetch_dq_rule_sql(self, qc_id: str, subject_area: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """Fetch DQ rule definition from the configured rules table for a given QC ID + Subject Area.
+
+        Returns the row with actual SQL_CODE (longest, starting with SELECT/WITH).
+        Multiple rows may exist per QC_ID — we pick the one with valid SQL.
+        """
+        if not self._configured():
+            return None
+        dq_cfg = get_dq_monitoring_config(self.settings)
+        rules_table = dq_cfg.get("rules_table_fqn", "")
+        if not rules_table:
+            return None
+        try:
+            cur = self.sf._connect().cursor()
+            if subject_area:
+                cur.execute(
+                    f"SELECT * FROM {rules_table}"
+                    f" WHERE CAST(QC_ID AS VARCHAR) = %s AND SUBJECT_AREA = %s"
+                    f" ORDER BY LENGTH(COALESCE(SQL_CODE, '')) DESC"
+                    f" LIMIT 5",
+                    (str(qc_id), subject_area),
+                )
+            else:
+                cur.execute(
+                    f"SELECT * FROM {rules_table}"
+                    f" WHERE CAST(QC_ID AS VARCHAR) = %s"
+                    f" ORDER BY LENGTH(COALESCE(SQL_CODE, '')) DESC"
+                    f" LIMIT 5",
+                    (str(qc_id),),
+                )
+            cols = [desc[0] for desc in cur.description]
+            sql_col_idx = next((i for i, c in enumerate(cols) if c == "SQL_CODE"), None)
+            best_row = None
+            for row in cur.fetchall():
+                if sql_col_idx is not None and row[sql_col_idx]:
+                    sql_val = str(row[sql_col_idx]).strip()
+                    if sql_val.upper().startswith(("SELECT", "WITH")):
+                        best_row = row
+                        break
+                if best_row is None:
+                    best_row = row
+            if not best_row:
+                return None
+            return {col: (str(val) if val is not None else None) for col, val in zip(cols, best_row)}
+        except Exception:  # noqa: BLE001
+            return None
+
+    def execute_dq_sql(self, sql_code: str, database: Optional[str] = None,
+                       schema: Optional[str] = None,
+                       warehouse: Optional[str] = None) -> Dict[str, Any]:
+        """Execute a DQ check SQL and return the results.
+
+        This is read-only — the SQL_CODE from config tables are SELECT statements.
+        Sets database/schema/warehouse context before executing so unqualified
+        object references resolve correctly.
+        Returns columns and rows, or an error message.
+        """
+        if not self._configured():
+            return {"executed": False, "error": "Snowflake not configured", "columns": [], "rows": []}
+        if not sql_code or not sql_code.strip():
+            return {"executed": False, "error": "No SQL code provided", "columns": [], "rows": []}
+        try:
+            cur = self.sf._connect().cursor()
+            if warehouse:
+                cur.execute(f"USE WAREHOUSE {warehouse}")
+            if database:
+                cur.execute(f"USE DATABASE {database}")
+            if schema:
+                cur.execute(f"USE SCHEMA {schema}")
+            log_sql(sql_code[:300], "dq_connector:execute_dq_sql", "READ", allowed=True)
+            cur.execute(sql_code)
+            columns = [desc[0] for desc in cur.description]
+            rows = []
+            for row in cur.fetchmany(100):
+                rows.append({col: (str(val) if val is not None else None) for col, val in zip(columns, row)})
+            return {"executed": True, "columns": columns, "rows": rows, "row_count": len(rows)}
+        except Exception as e:  # noqa: BLE001
+            return {"executed": False, "error": str(e), "columns": [], "rows": []}
 
     def summary(self, date_from: Optional[str] = None,
                 date_to: Optional[str] = None) -> Dict[str, Any]:

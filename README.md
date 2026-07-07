@@ -69,22 +69,27 @@ user-reported issue for faster future resolution.
 ```powershell
 cd c:\Users\EKGAH\Documents\project\ops-monitor\backend
 C:\Users\EKGAH\AppData\Local\Programs\Python\Python312\python.exe -m venv .venv
-.\.venv\Scripts\pip.exe install fastapi uvicorn pydantic snowflake-connector-python
-# For AWS live mode and Claude harness also run:
-# .\.venv\Scripts\pip.exe install -r requirements.txt
+.\.venv\Scripts\pip.exe install -r requirements.txt
 ```
 
 **Every time — start the backend:**
 ```powershell
 cd c:\Users\EKGAH\Documents\project\ops-monitor\backend
-$env:OPS_MONITOR_RELOAD = "0"
+
+# Kill any existing process on port 8001 (fixes "WinError 10048: address already in use")
+$proc = Get-NetTCPConnection -LocalPort 8001 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique
+if ($proc) { $proc | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue } ; Start-Sleep 1 }
+
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8001
 ```
 
 API docs at **http://localhost:8001/docs**.
 
-> Mock mode needs only `fastapi`, `uvicorn`, `pydantic`. `boto3` / `snowflake-connector-python`
-> / `anthropic` are only needed for LIVE mode and the Claude harness.
+> **Troubleshooting port conflicts:** If you see `[WinError 10048] Only one usage of each socket address is normally permitted`, a previous server instance is still running. The startup script above handles this automatically. To do it manually:
+> ```powershell
+> # Find and kill the process using port 8001
+> Get-NetTCPConnection -LocalPort 8001 | Select-Object OwningProcess -Unique | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
+> ```
 
 ### 2. Frontend (React + Vite) — port 5173
 
@@ -108,11 +113,14 @@ try { "backend: " + (Invoke-RestMethod -Uri "http://localhost:8001/api/health" -
 try { "frontend: " + (Invoke-WebRequest -Uri "http://localhost:5173/" -TimeoutSec 2 -UseBasicParsing).StatusCode } catch { "frontend: down" }
 ```
 
-### 3. (Optional) Enable the Claude harness
-```powershell
-$env:ANTHROPIC_API_KEY = "sk-ant-..."    # agents then reason via Claude over their skills
-$env:CLAUDE_MODEL = "claude-sonnet-4-6"  # optional override
+### 3. Claude LLM (Chat Agent)
+
+The chat agent uses Claude for human-like responses. The API key is configured in the `.env` file at the project root:
 ```
+ANTHROPIC_API_KEY=mga-0f973d609f7786b62a3fcd443d20e0957d0a9fec
+CLAUDE_MODEL=claude-sonnet-4.5
+```
+The backend loads this file automatically on startup — no manual environment variable setup needed. Without a valid key, agents fall back to deterministic template responses.
 
 ### 4. (Optional) Go LIVE
 Open **Settings** in the UI and enter AWS + Snowflake credentials. Saving any real

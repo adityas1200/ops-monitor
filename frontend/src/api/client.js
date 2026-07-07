@@ -48,6 +48,13 @@ export const api = {
     req('/chat', { method: 'POST', body: JSON.stringify({ message, pipeline_id, context }) }),
   reportActivityError: (body) =>
     req('/chat/activity-error', { method: 'POST', body: JSON.stringify(body) }),
+  dqDetails: (qcId, subjectArea) => {
+    const q = new URLSearchParams()
+    if (subjectArea) q.set('subject_area', subjectArea)
+    return req(`/dq/details/${encodeURIComponent(qcId)}?${q.toString()}`)
+  },
   incidents: () => req('/incidents'),
   addIssue: (body) => req('/issues', { method: 'POST', body: JSON.stringify(body) }),
+  getRcaKnowledge: () => req('/rca/knowledge'),
+  addRcaKnowledge: (body) => req('/rca/knowledge', { method: 'POST', body: JSON.stringify(body) }),
 }
