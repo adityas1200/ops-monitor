@@ -1,4 +1,5 @@
 from __future__ import annotations
+import json
 from typing import Any, Dict, Optional
 
 from app.agents.base import BaseAgent
@@ -77,21 +78,73 @@ class FixAgent(BaseAgent):
     name = "fix"
     skill_file = "fix.md"
 
+    def _llm_suggest(self, artifact: Dict[str, str], category: str,
+                     error: str, rca_result: Optional[Dict[str, Any]],
+                     user_edit: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """Use LLM to generate a specific fix based on actual code and error."""
+        if not self.harness.available:
+            return None
+        task_sql = ""
+        if rca_result and rca_result.get("code_analysis", {}).get("task_sql"):
+            task_sql = rca_result["code_analysis"]["task_sql"][:2000]
+
+        system = (
+            f"You are a senior data engineer. Given a failing task/procedure, its error, and "
+            f"optionally the source SQL, produce a concrete fix.\n\n"
+            f"=== SKILL ===\n{self.skill}\n\n"
+            f"CRITICAL RULES:\n"
+            f"- Output raw JSON only — NO markdown code fences, NO ```json wrapper\n"
+            f"- Start with {{ and end with }}\n"
+            f"- Required keys: title, rationale, risk, rollback, before, after, language, validation_hints\n"
+            f"- The 'before' field: the relevant failing code section\n"
+            f"- The 'after' field: the corrected version\n"
+            f"- Be SPECIFIC — reference exact table names, column names, SQL fragments"
+        )
+        payload = {
+            "artifact_platform": artifact["platform"],
+            "artifact_name": artifact["object_name"],
+            "category": category,
+            "error_message": error[:500],
+            "task_sql": task_sql,
+            "user_edit": user_edit,
+        }
+        if rca_result:
+            payload["root_cause_summary"] = rca_result.get("summary", "")[:300]
+            payload["detailed_analysis"] = rca_result.get("detailed_analysis", "")[:500]
+
+        txt = self.harness.reason(system, json.dumps(payload, default=str), max_tokens=2500)
+        if not txt:
+            return None
+        result = self._extract_json(txt)
+        if result and (result.get("after") or result.get("rationale")):
+            return result
+        return None
+
     def suggest(self, pipeline_id: str, incident_id: Optional[str] = None,
                 user_edit: Optional[str] = None) -> Dict[str, Any]:
         idx = {p["id"]: p for p in MonitoringAgent().collect()}
         target = idx.get(pipeline_id, {})
-        # determine the artifact to fix: prefer the RCA root node's artifact
         rca = RCAAgent().analyze(pipeline_id) if not incident_id else None
         root_id = rca["root_cause_node"] if rca else pipeline_id
         category = rca["category"] if rca else _classify(target.get("error"))
         artifact = _artifact_from_pipeline(root_id, idx)
 
-        # memory: reuse an accepted fix for this signature
         signature = f"{artifact['platform']} {category}"
         prior = self.recall(signature)
 
+        error = target.get("error") or ""
+        if rca and rca.get("evidence"):
+            for ev in rca["evidence"]:
+                if "Error" in ev:
+                    error = ev
+                    break
+
+        # LLM-first: try to generate a specific fix from real context
+        llm_fix = self._llm_suggest(artifact, category, error, rca, user_edit)
+
+        # Template fallback
         proposal = _remediate(category, artifact)
+
         fix = {
             "fix_id": f"FIX-{pipeline_id}",
             "incident_id": incident_id or (rca["incident_id"] if rca else None),
@@ -102,15 +155,25 @@ class FixAgent(BaseAgent):
             **proposal,
         }
 
-        if user_edit:
-            fix = self._apply_user_edit(fix, user_edit)
+        # Override with LLM results if available
+        if llm_fix:
+            if llm_fix.get("title"):
+                fix["title"] = llm_fix["title"]
+            if llm_fix.get("rationale"):
+                fix["rationale"] = llm_fix["rationale"]
+            if llm_fix.get("before"):
+                fix["before"] = llm_fix["before"]
+            if llm_fix.get("after"):
+                fix["after"] = llm_fix["after"]
+            if llm_fix.get("risk"):
+                fix["risk"] = llm_fix["risk"]
+            if llm_fix.get("rollback"):
+                fix["rollback"] = llm_fix["rollback"]
+            if llm_fix.get("validation_hints"):
+                fix["validation_hints"] = llm_fix["validation_hints"]
 
-        # optional richer reasoning via Claude
-        llm = self.think({"target": target, "category": category, "artifact": artifact,
-                          "user_edit": user_edit})
-        if llm and llm.get("after"):
-            fix["after"] = llm["after"]
-            fix["rationale"] = llm.get("rationale", fix["rationale"])
+        if user_edit and not llm_fix:
+            fix = self._apply_user_edit(fix, user_edit)
 
         self.learn({"signature": signature, "fix_id": fix["fix_id"],
                     "title": fix["title"], "user_edit": user_edit})

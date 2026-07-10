@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { api } from '../api/client'
-import LineageTable from './LineageTable'
 import TableLineageGraph from './TableLineageGraph'
+import RichRootCause from './RichRootCause'
 
 function TestSummary({ test }) {
   const [open, setOpen] = useState(null)
@@ -86,240 +86,308 @@ function reportApiError(onReportError, action, err) {
   onReportError?.({ tab: 'Workbench', action, error: err?.message || String(err) })
 }
 
-function Collapsible({ title, badge, badgeColor, defaultOpen = false, children }) {
-  const [open, setOpen] = useState(defaultOpen)
+
+const SEVERITY_COLOR = { Critical: '#e74c3c', High: '#e67e22', Medium: '#f1c40f', Low: '#2ecc71' }
+const CONFIDENCE_COLOR = { High: '#2ecc71', Medium: '#f1c40f', Low: '#e74c3c' }
+const PROPAGATION_COLOR = { root_cause: '#ff5c6c', failed: '#ff8a3d', impacted: '#ffb547' }
+const EVIDENCE_ICON = {
+  error_message: '!', task_metadata: 'T', query_id: 'Q', table_resolution: '#',
+  dq_correlation: 'D', log_entry: 'L', dq_check: 'D', task_correlation: 'C',
+}
+const STRENGTH_COLOR = { high: '#2ecc71', medium: '#f1c40f', low: '#e74c3c' }
+
+function InvestigationJourney({ journey }) {
+  if (!journey?.length) return null
   return (
-    <div style={{ marginTop: 14, border: '1px solid var(--border)', borderRadius: 8 }}>
-      <div
-        onClick={() => setOpen((v) => !v)}
-        style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '8px 12px', cursor: 'pointer',
-          background: 'var(--bg-secondary)', borderRadius: open ? '8px 8px 0 0' : 8,
-        }}
-      >
-        <span style={{ fontWeight: 600, fontSize: 13 }}>
-          {title}
-          {badge && (
-            <span style={{
-              marginLeft: 8, fontSize: 11, padding: '2px 8px', borderRadius: 99,
-              background: badgeColor || 'var(--border)', color: '#fff', fontWeight: 700,
-            }}>{badge}</span>
-          )}
-        </span>
-        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{open ? '▲ collapse' : '▼ expand'}</span>
-      </div>
-      {open && <div style={{ padding: '10px 14px' }}>{children}</div>}
+    <div className="investigation-journey">
+      {journey.map((step, i) => (
+        <div key={i} className="ij-step">
+          <div className="ij-dot" />
+          <div className="ij-content">
+            <span className="ij-label">{step.step}</span>
+            {step.detail && <span className="ij-detail">{step.detail}</span>}
+          </div>
+        </div>
+      ))}
     </div>
   )
 }
 
-const SEVERITY_COLOR = { Critical: '#e74c3c', High: '#e67e22', Medium: '#f1c40f', Low: '#2ecc71' }
-const CONFIDENCE_COLOR = { High: '#2ecc71', Medium: '#f1c40f', Low: '#e74c3c' }
+function FailurePropagation({ chain }) {
+  if (!chain?.length) return null
+  return (
+    <div className="propagation-chain">
+      {chain.map((node, i) => (
+        <React.Fragment key={i}>
+          <div className="prop-node" style={{ borderColor: PROPAGATION_COLOR[node.status] || '#8b95a5' }}>
+            <span className="prop-type">{node.type}</span>
+            <span className="prop-name">{node.name}</span>
+          </div>
+          {i < chain.length - 1 && <div className="prop-arrow">↓</div>}
+        </React.Fragment>
+      ))}
+    </div>
+  )
+}
+
+function EvidenceCards({ structured, fallback }) {
+  if (structured?.length > 0) {
+    return (
+      <div className="evidence-cards">
+        {structured.map((ev, i) => (
+          <div key={i} className="evidence-card">
+            <span className="ev-icon" style={{ background: STRENGTH_COLOR[ev.strength] || '#8b95a5' }}>
+              {EVIDENCE_ICON[ev.type] || 'E'}
+            </span>
+            <div className="ev-body">
+              <div className="ev-summary">{ev.summary}</div>
+              <div className="ev-meta">
+                <span className="ev-source">{ev.source}</span>
+                <span className="ev-strength" style={{ color: STRENGTH_COLOR[ev.strength] }}>{ev.strength}</span>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    )
+  }
+  if (fallback?.length > 0) {
+    return <ul className="evidence">{fallback.map((e, i) => <li key={i}>{e}</li>)}</ul>
+  }
+  return null
+}
+
+function ImpactCards({ ia }) {
+  if (!ia) return null
+  const cards = [
+    { label: 'Tables', value: ia.impacted_tables?.length || 0 },
+    { label: 'Pipelines', value: ia.impacted_pipelines?.length || 0 },
+    { label: 'Reports', value: ia.impacted_reports?.length || 0 },
+    { label: 'Severity', value: ia.business_severity || 'Unknown', isSeverity: true },
+  ]
+  return (
+    <div className="impact-cards">
+      {cards.map((c) => (
+        <div key={c.label} className="impact-card">
+          <div className={`impact-card__value ${c.isSeverity ? 'severity' : ''}`}
+            style={c.isSeverity ? { color: SEVERITY_COLOR[c.value] || 'var(--text)' } : undefined}>
+            {c.value}
+          </div>
+          <div className="impact-card__label">{c.label}</div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function ConfidenceSection({ confidence, confidenceLevel, drivers }) {
+  const confColor = CONFIDENCE_COLOR[confidenceLevel] || 'var(--border)'
+  return (
+    <div className="confidence-section">
+      <div className="conf-score" style={{ borderColor: confColor }}>
+        <span className="conf-value" style={{ color: confColor }}>{Math.round((confidence || 0) * 100)}%</span>
+        <span className="conf-label">{confidenceLevel || 'Unknown'}</span>
+      </div>
+      {drivers?.length > 0 && (
+        <div className="conf-factors">
+          {drivers.map((d, i) => (
+            <div key={i} className={`conf-factor ${d.met ? 'met' : 'unmet'}`}>
+              <span className="conf-check">{d.met ? '✓' : '✗'}</span>
+              <span>{d.factor}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {confidenceLevel === 'Low' && (
+        <div className="conf-warning">Human validation recommended</div>
+      )}
+    </div>
+  )
+}
 
 function RcaReport({ rca, selected, busy, onSuggestFix, onAddKnowledge }) {
   const ia = rca.impact_assessment || {}
   const rem = rca.remediation || {}
+  const inc = rca.incident_summary || {}
   const sevColor = SEVERITY_COLOR[ia.business_severity] || 'var(--border)'
   const confColor = CONFIDENCE_COLOR[rca.confidence_level] || 'var(--border)'
 
   return (
-    <div className="card">
-      {/* ── Header row ─────────────────────────────────────────────────────── */}
-      <h3>RCA · {selected?.name}</h3>
-      <div className="row" style={{ flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
-        <span className="pill">Incident: {rca.incident_id}</span>
-        <span className="pill" style={{ background: 'var(--border)', fontWeight: 600 }}>
-          {rca.failure_type || rca.category}
-        </span>
-        <span className="pill">Root cause: {rca.root_cause_name}</span>
-        {rca.confidence_level && (
+    <div className="card rca-simplified">
+      {/* ═══ SECTION 1: INCIDENT SUMMARY ═════════════════════════════════════ */}
+      <div className="incident-header">
+        <div className="incident-header__top">
+          <span className="pill" style={{ background: 'var(--border)', fontWeight: 600 }}>
+            {inc.failure_type || rca.failure_type || rca.category}
+          </span>
           <span className="pill" style={{ background: confColor, color: '#fff', fontWeight: 700 }}>
-            {rca.confidence_level} confidence ({(rca.confidence * 100).toFixed(0)}%)
+            {rca.confidence_level} ({inc.confidence_score || Math.round((rca.confidence || 0) * 100)}%)
           </span>
-        )}
-        {ia.business_severity && (
-          <span className="pill" style={{ background: sevColor, color: '#fff', fontWeight: 700 }}>
-            {ia.business_severity} severity
-          </span>
-        )}
-        {rca.seen_before && <span className="pill" style={{ color: '#7c5cff' }}>♺ seen before</span>}
+          {ia.business_severity && (
+            <span className="pill" style={{ background: sevColor, color: '#fff', fontWeight: 700 }}>
+              {ia.business_severity}
+            </span>
+          )}
+          {rca.seen_before && <span className="pill" style={{ color: '#7c5cff' }}>&#9852; seen before</span>}
+          <span className="pill muted" style={{ marginLeft: 'auto' }}>{rca.incident_id}</span>
+        </div>
+        <div className="incident-header__details">
+          <div className="ih-field">
+            <span className="ih-label">Failure</span>
+            <span className="ih-value">{inc.failure_name || rca.root_cause_name}</span>
+          </div>
+          <div className="ih-field">
+            <span className="ih-label">Environment</span>
+            <span className="ih-value">{inc.environment || 'Production'}</span>
+          </div>
+          <div className="ih-field">
+            <span className="ih-label">Detected</span>
+            <span className="ih-value">{inc.detection_time || '—'}</span>
+          </div>
+          <div className="ih-field">
+            <span className="ih-label">Status</span>
+            <span className={`badge ${inc.current_status || rca.category}`}>{inc.current_status || 'FAILED'}</span>
+          </div>
+        </div>
       </div>
 
-      {/* ── Summary ──────────────────────────────────────────────────────────── */}
-      <p style={{ marginBottom: 6 }}>{rca.summary}</p>
-      {rca.detailed_analysis && rca.detailed_analysis !== rca.summary && (
-        <p className="muted" style={{ fontSize: 13, marginBottom: 10 }}>{rca.detailed_analysis}</p>
-      )}
-
-      {/* ── Evidence (Metadata First) ─────────────────────────────────────── */}
-      <strong>Evidence</strong>
-      <ul className="evidence">{(rca.evidence || []).map((e, i) => <li key={i}>{e}</li>)}</ul>
-
-      {/* ── Code Analysis ─────────────────────────────────────────────────── */}
-      {rca.code_analysis && (rca.code_analysis.llm_explanation || rca.code_analysis.task_sql) && (
-        <Collapsible title="Code Analysis" defaultOpen>
-          {rca.code_analysis.llm_explanation && (
-            <p style={{ fontSize: 13, margin: '0 0 10px', whiteSpace: 'pre-line' }}>
-              {rca.code_analysis.llm_explanation}
+      {/* ═══ SECTION 2: ROOT CAUSE ═══════════════════════════════════════════ */}
+      <div className="rca-section">
+        {rca.root_cause?.business_explanation && (
+          <div style={{ marginBottom: 10 }}>
+            <h4 className="rca-section__title">Root Cause</h4>
+            <p style={{ fontSize: 13, margin: '0 0 6px', lineHeight: 1.5 }}>
+              {rca.root_cause.business_explanation}
             </p>
-          )}
-          {rca.code_analysis.task_sql && (
-            <div>
-              <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 4 }}>Task / Procedure SQL</div>
+            {rca.root_cause.technical_explanation && rca.root_cause.technical_explanation !== rca.root_cause.business_explanation && (
               <pre style={{
-                fontSize: 11, lineHeight: 1.5, margin: 0, whiteSpace: 'pre-wrap',
-                background: 'var(--code-bg)', padding: 10, borderRadius: 6, maxHeight: 220, overflow: 'auto',
-              }}>{rca.code_analysis.task_sql}</pre>
-            </div>
-          )}
-          {rca.code_analysis.procedure_io && (rca.code_analysis.procedure_io.inputs?.length > 0 || rca.code_analysis.procedure_io.outputs?.length > 0) && (
-            <div style={{ marginTop: 8, fontSize: 12 }}>
-              {rca.code_analysis.procedure_io.inputs?.length > 0 && (
-                <span className="muted">Inputs: {rca.code_analysis.procedure_io.inputs.slice(0, 5).join(', ')}</span>
-              )}
-              {rca.code_analysis.procedure_io.outputs?.length > 0 && (
-                <span className="muted" style={{ marginLeft: 12 }}>Outputs: {rca.code_analysis.procedure_io.outputs.slice(0, 5).join(', ')}</span>
-              )}
-            </div>
-          )}
-        </Collapsible>
-      )}
-
-      {/* ── Knowledge Applied ─────────────────────────────────────────────── */}
-      {rca.knowledge_applied?.length > 0 && (
-        <Collapsible title="Domain Knowledge Applied" defaultOpen={false}>
-          {rca.knowledge_applied.map((rule, i) => (
-            <div key={i} style={{ marginBottom: 8, fontSize: 12, padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
-              <div><strong>Pattern:</strong> {rule.PATTERN}</div>
-              <div><strong>Root Cause:</strong> {rule.ROOT_CAUSE}</div>
-              <div><strong>Fix:</strong> {rule.FIX}</div>
-              {rule.ADDED_BY && <div className="muted">Added by: {rule.ADDED_BY} ({rule.ADDED_ON})</div>}
-            </div>
-          ))}
-        </Collapsible>
-      )}
-
-      {/* ── Impact Assessment ──────────────────────────────────────────────── */}
-      {(ia.impacted_tables?.length > 0 || ia.impacted_pipelines?.length > 0) && (
-        <Collapsible
-          title="Impact Assessment"
-          badge={ia.business_severity}
-          badgeColor={sevColor}
-          defaultOpen
-        >
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 16px' }}>
-            <div>
-              <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 4 }}>Impacted Tables ({ia.impacted_tables?.length || 0})</div>
-              {(ia.impacted_tables || []).length === 0
-                ? <span className="muted">None identified</span>
-                : <ul style={{ margin: 0, paddingLeft: 18 }}>{(ia.impacted_tables || []).map((t, i) => <li key={i} style={{ fontSize: 12 }}>{t}</li>)}</ul>
-              }
-            </div>
-            <div>
-              <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 4 }}>Impacted Pipelines ({ia.impacted_pipelines?.length || 0})</div>
-              {(ia.impacted_pipelines || []).length === 0
-                ? <span className="muted">None identified</span>
-                : <ul style={{ margin: 0, paddingLeft: 18 }}>{(ia.impacted_pipelines || []).map((p, i) => <li key={i} style={{ fontSize: 12 }}>{p}</li>)}</ul>
-              }
-            </div>
-            {ia.impacted_reports?.length > 0 && (
-              <div style={{ gridColumn: '1 / -1' }}>
-                <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 4 }}>Impacted Reports ({ia.impacted_reports.length})</div>
-                <ul style={{ margin: 0, paddingLeft: 18 }}>
-                  {ia.impacted_reports.map((r, i) => <li key={i} style={{ fontSize: 12 }}>{r}</li>)}
-                </ul>
-              </div>
+                fontSize: 12, margin: 0, padding: '8px 10px', borderRadius: 6,
+                background: 'var(--code-bg)', whiteSpace: 'pre-wrap', lineHeight: 1.5,
+              }}>{rca.root_cause.technical_explanation}</pre>
             )}
           </div>
-          <p className="muted" style={{ fontSize: 11, marginTop: 6 }}>
-            {rca.impacted_nodes?.length || 0} downstream task(s)
-            {rca.downstream_consumers?.views > 0 && ` · ${rca.downstream_consumers.views} view(s)`}
-            {rca.downstream_consumers?.procedures > 0 && ` · ${rca.downstream_consumers.procedures} procedure(s)`}
-          </p>
-        </Collapsible>
-      )}
+        )}
+        {rca.root_cause ? (
+          <RichRootCause rootCause={rca.root_cause} />
+        ) : (
+          <>
+            <h4 className="rca-section__title">Root Cause</h4>
+            <p style={{ marginBottom: 6 }}>{rca.summary}</p>
+            {rca.detailed_analysis && rca.detailed_analysis !== rca.summary && (
+              <p className="muted" style={{ fontSize: 13 }}>{rca.detailed_analysis}</p>
+            )}
+          </>
+        )}
 
-      {/* ── Remediation ────────────────────────────────────────────────────── */}
-      {(rem.immediate_fix || rem.permanent_fix) && (
-        <Collapsible title="Remediation" defaultOpen>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {rem.immediate_fix && (
-              <div>
-                <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 3, color: '#e74c3c' }}>Immediate Fix</div>
-                <p style={{ fontSize: 13, margin: 0 }}>{rem.immediate_fix}</p>
-              </div>
-            )}
-            {rem.permanent_fix && (
-              <div>
-                <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 3, color: '#2ecc71' }}>Permanent Fix</div>
-                <p style={{ fontSize: 13, margin: 0 }}>{rem.permanent_fix}</p>
-              </div>
-            )}
-            {rem.monitoring_recommendation && (
-              <div>
-                <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 3, color: '#3498db' }}>Monitoring Recommendation</div>
-                <p style={{ fontSize: 13, margin: 0 }}>{rem.monitoring_recommendation}</p>
-              </div>
-            )}
-          </div>
-        </Collapsible>
-      )}
-
-      {/* ── Upstream / Downstream lineage ──────────────────────────────────── */}
-      <Collapsible title="Upstream Lineage" defaultOpen={false}>
-        {rca.upstream_lineage_text
-          ? <pre style={{ fontSize: 12, lineHeight: 1.8, margin: 0, whiteSpace: 'pre-wrap' }}>{rca.upstream_lineage_text}</pre>
-          : <span className="muted">No upstream lineage resolved</span>
-        }
         {rca.upstream_lineage?.nodes?.length > 0 && (
-          <div style={{ marginTop: 10 }}>
-            <TableLineageGraph tableLineage={rca.upstream_lineage} direction="upstream" hideTitle />
+          <div style={{ marginTop: 12 }}>
+            <TableLineageGraph
+              tableLineage={rca.upstream_lineage}
+              title="Lineage"
+              direction="upstream"
+              defaultOpen={false}
+              colorScheme="upstream"
+            />
           </div>
         )}
-      </Collapsible>
+      </div>
 
-      <Collapsible title="Downstream Lineage" defaultOpen={false}>
-        {rca.downstream_lineage_text
-          ? <pre style={{ fontSize: 12, lineHeight: 1.8, margin: 0, whiteSpace: 'pre-wrap' }}>{rca.downstream_lineage_text}</pre>
-          : <span className="muted">No downstream lineage resolved</span>
-        }
-        {rca.downstream_lineage?.nodes?.length > 0 && (
-          <div style={{ marginTop: 10 }}>
-            <TableLineageGraph tableLineage={rca.downstream_lineage} direction="downstream" hideTitle />
-          </div>
-        )}
-      </Collapsible>
-
-      {/* ── Full RCA report ────────────────────────────────────────────────── */}
-      {rca.rca_report && (
-        <Collapsible title="Full RCA Report" defaultOpen={false}>
-          <pre style={{
-            fontSize: 11, lineHeight: 1.7, margin: 0, whiteSpace: 'pre-wrap',
-            fontFamily: 'monospace', background: 'var(--code-bg)', padding: 12, borderRadius: 6,
-          }}>{rca.rca_report}</pre>
-        </Collapsible>
+      {/* ═══ SECTION 3: INVESTIGATION JOURNEY ════════════════════════════════ */}
+      {rca.investigation_journey?.length > 0 && (
+        <div className="rca-section">
+          <h4 className="rca-section__title">Investigation Journey</h4>
+          <InvestigationJourney journey={rca.investigation_journey} />
+        </div>
       )}
 
-      {/* ── Detailed lineage table ─────────────────────────────────────────── */}
-      <Collapsible title="Lineage Detail Table" defaultOpen={false}>
-        <LineageTable rows={rca.lineage_table} affectedTables={rca.affected_tables} />
-        {rca.related_dq_failures?.length > 0 && (
-          <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>
-            Related DQ failures: {rca.related_dq_failures.map((d) => d.name).join(', ')}
-          </p>
-        )}
-      </Collapsible>
+      {/* ═══ SECTION 4: FAILURE PROPAGATION ══════════════════════════════════ */}
+      {rca.failure_propagation?.length > 0 && (
+        <div className="rca-section">
+          <h4 className="rca-section__title">Failure Propagation</h4>
+          <FailurePropagation chain={rca.failure_propagation} />
+        </div>
+      )}
 
-      <div style={{ marginTop: 16, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-        <button className="btn purple" disabled={busy === 'fix' || selected?.id?.startsWith('dq_')}
-          onClick={onSuggestFix}>
-          Identify &amp; Suggest Fix
-        </button>
-        <button className="btn sec" onClick={() => onAddKnowledge?.(rca)}>
-          + Add to Knowledge Base
-        </button>
+      {/* ═══ SECTION 5: LINEAGE & IMPACT ═════════════════════════════════════ */}
+      {rca.downstream_lineage?.nodes?.length > 0 && (
+        <div className="rca-section">
+          <TableLineageGraph
+            tableLineage={rca.downstream_lineage}
+            title="Lineage"
+            direction="downstream"
+            defaultOpen
+            colorScheme="downstream"
+          />
+        </div>
+      )}
+
+      {/* ═══ SECTION 6: EVIDENCE ═════════════════════════════════════════════ */}
+      <div className="rca-section">
+        <h4 className="rca-section__title">Evidence</h4>
+        <EvidenceCards structured={rca.structured_evidence} fallback={rca.evidence} />
       </div>
+
+      {/* ═══ SECTION 7: IMPACT SUMMARY ═══════════════════════════════════════ */}
+      <div className="rca-section">
+        <h4 className="rca-section__title">Impact Summary</h4>
+        <p className="rca-impact-summary">
+          {rca.impact_summary || `${ia.impacted_tables?.length || 0} table(s), ${ia.impacted_pipelines?.length || 0} pipeline(s) impacted`}
+        </p>
+        <ImpactCards ia={ia} />
+      </div>
+
+      {/* ═══ REMEDIATION ═══════════════════════════════════════════════════ */}
+      {(rem.immediate_fix || rem.permanent_fix || rem.monitoring_recommendation) && (
+        <div className="rca-section">
+          <h4 className="rca-section__title">Remediation</h4>
+          {rem.immediate_fix && (
+            <p style={{ fontSize: 13, margin: '0 0 6px' }}><strong>Immediate:</strong> {rem.immediate_fix}</p>
+          )}
+          {rem.permanent_fix && (
+            <p style={{ fontSize: 13, margin: '0 0 6px' }}><strong style={{ color: '#2ecc71' }}>Permanent:</strong> {rem.permanent_fix}</p>
+          )}
+          {rem.monitoring_recommendation && (
+            <p style={{ fontSize: 13, margin: 0 }}><strong style={{ color: '#3498db' }}>Monitoring:</strong> {rem.monitoring_recommendation}</p>
+          )}
+        </div>
+      )}
+
+      {/* ═══ SECTION 8: AI CONFIDENCE EXPLANATION ════════════════════════════ */}
+      <div className="rca-section">
+        <h4 className="rca-section__title">AI Confidence</h4>
+        <ConfidenceSection
+          confidence={rca.confidence}
+          confidenceLevel={rca.confidence_level}
+          drivers={rca.confidence_drivers}
+        />
+      </div>
+
+      {/* ═══ ACTIONS ════════════════════════════════════════════════════════ */}
+      <div className="rca-section">
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <button className="btn purple" disabled={busy === 'fix'}
+            onClick={onSuggestFix}>
+            Identify &amp; Suggest Fix
+          </button>
+          <button className="btn sec" onClick={() => onAddKnowledge?.(rca)}>
+            + Add to Knowledge Base
+          </button>
+        </div>
+      </div>
+
+      {/* ═══ CODE ANALYSIS (inline, not collapsible) ═════════════════════════ */}
+      {rca.code_analysis?.llm_explanation && (
+        <div className="rca-section">
+          <h4 className="rca-section__title">Code Analysis</h4>
+          <p style={{ fontSize: 13, margin: 0, whiteSpace: 'pre-line' }}>{rca.code_analysis.llm_explanation}</p>
+          {rca.code_analysis?.task_sql && (
+            <pre style={{
+              fontSize: 11, lineHeight: 1.5, margin: '8px 0 0', whiteSpace: 'pre-wrap',
+              background: 'var(--code-bg)', padding: 10, borderRadius: 6, maxHeight: 220, overflow: 'auto',
+            }}>{rca.code_analysis.task_sql}</pre>
+          )}
+        </div>
+      )}
     </div>
   )
 }

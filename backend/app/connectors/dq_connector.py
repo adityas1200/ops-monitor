@@ -190,6 +190,7 @@ class DQConnector:
         """Execute a DQ check SQL and return the results.
 
         This is read-only — the SQL_CODE from config tables are SELECT statements.
+        Uses a read-only role to ensure no write side-effects.
         Sets database/schema/warehouse context before executing so unqualified
         object references resolve correctly.
         Returns columns and rows, or an error message.
@@ -200,6 +201,10 @@ class DQConnector:
             return {"executed": False, "error": "No SQL code provided", "columns": [], "rows": []}
         try:
             cur = self.sf._connect().cursor()
+            sf_cfg = self.settings.get("snowflake", {})
+            read_only_role = sf_cfg.get("read_only_role", "")
+            if read_only_role:
+                cur.execute(f"USE ROLE {read_only_role}")
             if warehouse:
                 cur.execute(f"USE WAREHOUSE {warehouse}")
             if database:
@@ -212,9 +217,43 @@ class DQConnector:
             rows = []
             for row in cur.fetchmany(100):
                 rows.append({col: (str(val) if val is not None else None) for col, val in zip(columns, row)})
-            return {"executed": True, "columns": columns, "rows": rows, "row_count": len(rows)}
+            result = {"executed": True, "columns": columns, "rows": rows, "row_count": len(rows)}
+            if read_only_role:
+                original_role = sf_cfg.get("role", "")
+                if original_role:
+                    cur.execute(f"USE ROLE {original_role}")
+            return result
         except Exception as e:  # noqa: BLE001
             return {"executed": False, "error": str(e), "columns": [], "rows": []}
+
+    def execute_dq_rule(self, qc_id: str, subject_area: Optional[str] = None,
+                        limit: int = 20) -> Dict[str, Any]:
+        """Fetch and execute a DQ rule SQL to get actual failing rows.
+
+        Returns execution results including sample rows, count, and the SQL used.
+        """
+        rule = self.fetch_dq_rule_sql(qc_id, subject_area)
+        if not rule:
+            return {"executed": False, "error": "No DQ rule SQL found", "columns": [], "rows": [],
+                    "rule_sql": None}
+        sql_code = rule.get("SQL_CODE", "")
+        if not sql_code or not sql_code.strip():
+            return {"executed": False, "error": "Rule has no SQL_CODE", "columns": [], "rows": [],
+                    "rule_sql": None, "rule_meta": rule}
+
+        limited_sql = f"SELECT * FROM ({sql_code.rstrip(';')}) _dq_sub LIMIT {limit}"
+
+        dq_cfg = get_dq_monitoring_config(self.settings)
+        fqn_parts = dq_cfg["table_fqn"].split(".")
+        ctx_db = fqn_parts[0] if len(fqn_parts) >= 3 else None
+        ctx_schema = fqn_parts[1] if len(fqn_parts) >= 3 else None
+        sf_cfg = self.settings.get("snowflake", {})
+        wh = sf_cfg.get("warehouse")
+
+        result = self.execute_dq_sql(limited_sql, database=ctx_db, schema=ctx_schema, warehouse=wh)
+        result["rule_sql"] = sql_code
+        result["rule_meta"] = {k: v for k, v in rule.items() if k != "SQL_CODE"}
+        return result
 
     def summary(self, date_from: Optional[str] = None,
                 date_to: Optional[str] = None) -> Dict[str, Any]:

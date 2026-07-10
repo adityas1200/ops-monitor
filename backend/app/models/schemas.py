@@ -81,6 +81,7 @@ class ChatRequest(BaseModel):
     message: str
     pipeline_id: Optional[str] = None
     context: Optional[Dict[str, Any]] = None
+    session_id: Optional[str] = None
 
 
 class ActivityErrorRequest(BaseModel):

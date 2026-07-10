@@ -10,8 +10,8 @@ BACKEND_DIR = APP_DIR.parent                           # .../backend
 PROJECT_ROOT = BACKEND_DIR.parent                      # .../ops-monitor
 
 
-def _load_env_file(path: Path) -> None:
-    """Load a .env file into os.environ (does not override existing vars)."""
+def _load_env_file(path: Path, force: bool = False) -> None:
+    """Load a .env file into os.environ. With force=True, overrides existing vars."""
     if not path.is_file():
         return
     for line in path.read_text(encoding="utf-8").splitlines():
@@ -21,7 +21,7 @@ def _load_env_file(path: Path) -> None:
         key, _, value = line.partition("=")
         key = key.strip()
         value = value.strip().strip("'\"")
-        if key and key not in os.environ:
+        if key and (force or key not in os.environ):
             os.environ[key] = value
 
 
@@ -75,6 +75,7 @@ _DEFAULT_SETTINGS: Dict[str, Any] = {
         "password": "",
         "warehouse": "",
         "role": "",
+        "read_only_role": "",
         "database": "",
         "schema": "",
         "preprod_account": "",

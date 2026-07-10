@@ -3,9 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
+import json as _json
+
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.agents.orchestrator import orchestrator
@@ -16,6 +18,7 @@ from app.core.config import (AWS_OPTIONAL_FIELDS, SF_OPTIONAL_FIELDS, load_setti
                              normalize_snowflake_auth, platforms_configured,
                              save_settings, validate_monitoring_settings,
                              validate_snowflake_settings)
+from app.memory.session_store import session_store
 from app.models.schemas import (ActivityErrorRequest, AddIssueRequest, ChatRequest,
                                 FixRequest, RCARequest, SettingsPayload, ValidateRequest)
 
@@ -31,7 +34,14 @@ app.add_middleware(
 @app.get("/api/health")
 def health():
     s = load_settings()
-    return {"status": "ok", "live_only": True, "platforms": platforms_configured(s)}
+    from app.core.config import USE_CLAUDE, CLAUDE_MODEL
+    return {
+        "status": "ok",
+        "live_only": True,
+        "platforms": platforms_configured(s),
+        "llm": {"available": USE_CLAUDE, "model": CLAUDE_MODEL if USE_CLAUDE else None,
+                "last_error": orchestrator.chat.harness.last_error},
+    }
 
 
 # ---- Connectivity -----------------------------------------------------
@@ -218,7 +228,34 @@ def remediate(pipeline_id: str):
 # ---- Chat -------------------------------------------------------------
 @app.post("/api/chat")
 def chat(req: ChatRequest):
-    return orchestrator.chat_message(req.message, req.pipeline_id, req.context)
+    sid = req.session_id or "default"
+    history = session_store.get_history(sid)
+    result = orchestrator.chat_message(req.message, req.pipeline_id, req.context, history)
+    session_store.add_message(sid, "user", req.message)
+    session_store.add_message(sid, "assistant", result["reply"])
+    return result
+
+
+@app.post("/api/chat/stream")
+def chat_stream(req: ChatRequest):
+    """SSE streaming endpoint for chat — returns text chunks as they generate."""
+    sid = req.session_id or "default"
+    history = session_store.get_history(sid)
+    meta, generator = orchestrator.chat_stream(req.message, req.pipeline_id, req.context, history)
+    session_store.add_message(sid, "user", req.message)
+
+    def event_stream():
+        yield f"event: meta\ndata: {_json.dumps({'intent': meta['intent'], 'agent': meta['agent']})}\n\n"
+        full_reply = []
+        for chunk in generator:
+            full_reply.append(chunk)
+            yield f"event: chunk\ndata: {_json.dumps({'text': chunk})}\n\n"
+        reply_text = "".join(full_reply)
+        session_store.add_message(sid, "assistant", reply_text)
+        payload_data = meta.get("payload")
+        yield f"event: done\ndata: {_json.dumps({'payload': payload_data}, default=str)}\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 @app.post("/api/chat/activity-error")

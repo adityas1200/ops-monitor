@@ -19,6 +19,55 @@ async function req(path, opts = {}) {
   return res.json()
 }
 
+/**
+ * Stream chat responses via SSE. Calls back on each event.
+ * Returns an abort function.
+ */
+export function chatStream(message, pipeline_id, context, session_id, { onMeta, onChunk, onDone, onError }) {
+  const controller = new AbortController()
+  fetch(BASE + '/chat/stream', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message, pipeline_id, context, session_id }),
+    signal: controller.signal,
+  })
+    .then((res) => {
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      function pump() {
+        return reader.read().then(({ done, value }) => {
+          if (done) {
+            onDone?.(null)
+            return
+          }
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split('\n')
+          buffer = lines.pop() || ''
+          let eventType = ''
+          for (const line of lines) {
+            if (line.startsWith('event: ')) {
+              eventType = line.slice(7).trim()
+            } else if (line.startsWith('data: ')) {
+              const data = JSON.parse(line.slice(6))
+              if (eventType === 'meta') onMeta?.(data)
+              else if (eventType === 'chunk') onChunk?.(data.text)
+              else if (eventType === 'done') onDone?.(data.payload)
+            }
+          }
+          return pump()
+        })
+      }
+      return pump()
+    })
+    .catch((err) => {
+      if (err.name !== 'AbortError') onError?.(err)
+    })
+  return () => controller.abort()
+}
+
 export const api = {
   health: () => req('/health'),
   connectivity: () => req('/connectivity'),
@@ -44,8 +93,8 @@ export const api = {
     req('/fix', { method: 'POST', body: JSON.stringify({ pipeline_id, user_edit, incident_id }) }),
   validate: (pipeline_id, fix_id) =>
     req('/validate', { method: 'POST', body: JSON.stringify({ pipeline_id, fix_id }) }),
-  chat: (message, pipeline_id, context) =>
-    req('/chat', { method: 'POST', body: JSON.stringify({ message, pipeline_id, context }) }),
+  chat: (message, pipeline_id, context, session_id) =>
+    req('/chat', { method: 'POST', body: JSON.stringify({ message, pipeline_id, context, session_id }) }),
   reportActivityError: (body) =>
     req('/chat/activity-error', { method: 'POST', body: JSON.stringify(body) }),
   dqDetails: (qcId, subjectArea) => {

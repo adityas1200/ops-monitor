@@ -511,6 +511,83 @@ class LineageService:
         except Exception:  # noqa: BLE001
             return {"inputs": list(fallback_tables or []), "outputs": []}
 
+    def fetch_upstream_procedure_chain(
+        self,
+        database: str,
+        schema: str,
+        task_name: str,
+        depth: int = 3,
+    ) -> List[Dict[str, Any]]:
+        """Recursively fetch upstream procedure definitions to trace the data transformation chain.
+
+        For a given task, fetches its procedure body, identifies input tables,
+        then for each input table finds the task/procedure that produces it and
+        repeats up to `depth` levels.
+
+        Returns a list of {level, object_name, object_type, sql_body, inputs, outputs}.
+        """
+        if not self.sf._configured() or not database or not schema or not task_name:
+            return []
+
+        chain: List[Dict[str, Any]] = []
+        visited: Set[str] = set()
+        queue: List[tuple] = [(database, schema, task_name, "task", 0)]
+
+        while queue:
+            db, sch, name, obj_type, level = queue.pop(0)
+            if level >= depth:
+                continue
+            obj_key = f"{db}.{sch}.{name}".upper()
+            if obj_key in visited:
+                continue
+            visited.add(obj_key)
+
+            sql_body = self.fetch_object_definition(db, sch, name, obj_type)
+            if not sql_body:
+                continue
+
+            io = _classify_sql_io(sql_body, db, sch)
+            chain.append({
+                "level": level,
+                "object_name": f"{db}.{sch}.{name}",
+                "object_type": obj_type,
+                "sql_body": sql_body[:3000],
+                "inputs": io["inputs"],
+                "outputs": io["outputs"],
+            })
+
+            if level + 1 >= depth:
+                continue
+            graph = self._graph_cache or {}
+            for input_table in io["inputs"][:10]:
+                parts = input_table.split(".")
+                if len(parts) < 3:
+                    continue
+                t_db, t_schema, t_name = parts[0], parts[1], parts[2]
+                for tkey, meta in graph.items():
+                    g_name = (meta.get("task_name") or "").upper()
+                    g_db = (meta.get("database") or "").upper()
+                    g_schema = (meta.get("schema") or "").upper()
+                    table_from_task = extract_table_name_from_identifier(g_name)
+                    if (g_db == t_db.upper() and g_schema == t_schema.upper()
+                            and table_from_task and table_from_task == t_name.upper()):
+                        queue.append((g_db, g_schema, g_name, "task", level + 1))
+                        break
+                else:
+                    view_def = self.fetch_object_definition(t_db, t_schema, t_name, "view")
+                    if view_def:
+                        chain.append({
+                            "level": level + 1,
+                            "object_name": input_table,
+                            "object_type": "view",
+                            "sql_body": view_def[:3000],
+                            "inputs": _classify_sql_io(view_def, t_db, t_schema)["inputs"],
+                            "outputs": [input_table],
+                        })
+                        visited.add(input_table.upper())
+
+        return chain
+
     # ---- Upstream lineage graph -------------------------------------------
 
     def build_upstream_lineage_graph(

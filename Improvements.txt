@@ -1,26 +1,520 @@
-Improvement #1 :
+You are working on an existing Agentic Ops Monitoring platform.
 
-1- Rename Tool name from 'Ops Monitoring' to 'Agentic Ops Monitoring and QC'
-2- Revamp Front end design - 
-   -use combination of dark grey and white
-   -align dashboard, workbench and settings options in the left side bar
-   -In Dashboard, DQ status 'tab' should be the default selection and should be placed before 'Tasks'
-   -First time, when user clicks on workbench. It should display message 'Go to Dashboard to see if any DQ or task or pipeline failed'
-   -When user clicks 'Run RCA' on any failed DQ/Tasks/Pipeline, then it directs to Workbench to show RCA and further next steps. In such case if user clicks on any other tab and the comes back to 'Workbench' it should retain the last results and set of actions that have already been done. There is no need to run the RCA everytime user clicks on 'Workbench'
-3- Chat Agent should be using LLM to chat with the user and provide more human like error rather than any defined response. Please modify the chat agent to use LLM
+IMPORTANT:
 
-Issue #1 - 
-1 - On 'Workbench' -> 'Back to all jobs' is randomly displaying all tasks and DQs on the same page where as it should revert to Dashboard tab with all filters and data retained
+The platform already contains:
 
-Improvement #2 - 
-let me give you context around the RCA we are expecting and then accordingly modify your above analysis-
-- if anything fails be it DQ or Task/pipeline, RCA agent should be able to identify the cause of failure
-- Deep dive in to the RCA collect more details by back tracking the tables it failed, pull the procedure or view definition from which that table is created
-- Create a lineage to provide upstream and downstream visibility
-- Provide clean and clear summary of RCA
-- It should be able to fit in the above details in existing frontend structure
-Challenge - I am currently facing is that I am not getting the RCA as expected. For ex. - if a DQ fails then agent should be to extract it DQ sql, run it and see what is causing the failure and then subsequently back the tables sql to understand it's code and identify the reason and so on
+- DQ Monitoring
+- Snowflake Task Monitoring
+- Snowflake Procedure Monitoring
+- AWS Pipeline Monitoring
+- Existing RCA Agent
+- Existing Fix Recommendation Agent
+- Existing Validation Agent
+- Existing UI
 
-Improvement #3 -
-1- On DQ task tab, add view details button corresponding to each QC ID, by clicking this a popup should open which will show the SQL results corresponding to that query
-2- On Frontend, I want to keep simplified RCA view, similar to following screenshots. please modify RCA view as per following screenshots 'introducing-genie-zeroops-put-data-and-ai-blog-img-2.png' and 'introducing-genie-zeroops-put-data-and-ai-blog-img-3.png'
+Do NOT redesign the platform.
+
+Do NOT replace existing RCA logic.
+
+Do NOT build Fix Recommendation capability.
+
+Do NOT build Validation capability.
+
+Only enhance:
+
+1. RCA accuracy
+2. Evidence collection
+3. Dynamic lineage discovery
+4. Dependency tracing
+5. Impact analysis
+6. RCA confidence scoring
+7. RCA UI presentation and explainability
+
+The output of this RCA agent will be consumed by downstream Fix and Validation agents.
+
+=================================================
+PRIMARY OBJECTIVE
+=================================================
+
+Transform RCA from a simple explanation into a fully explainable investigation report.
+
+The RCA agent should behave like a senior production support engineer who documents:
+
+- What failed
+- Why it failed
+- How it was investigated
+- What evidence was collected
+- What assets are impacted
+
+The RCA agent should never guess.
+
+Every RCA statement must be backed by evidence.
+
+=================================================
+ENHANCEMENT 1
+EVIDENCE DRIVEN RCA
+=================================================
+
+Before generating RCA:
+
+Collect evidence from all available systems.
+
+For DQ failures:
+- Failed DQ SQL
+- DQ metadata
+- Source counts
+- Target counts
+- Duplicate analysis
+- Null analysis
+- Integrity check results
+
+For Snowflake Task failures:
+- Task history
+- Task dependencies
+- Error messages
+- Warehouse information
+
+For Procedure failures:
+- Query history
+- Child queries
+- Failed SQL statements
+- Procedure execution logs
+
+For AWS failures:
+- Pipeline logs
+- Stage failures
+- Job failures
+- Connectivity failures
+
+Every RCA statement must contain evidence references.
+
+Bad RCA:
+
+"Source issue identified."
+
+Good RCA:
+
+"Target contains 18,234 fewer records than source.
+Analysis shows records were dropped during REF_HCP join because 54 new source values are missing from reference mapping."
+
+=================================================
+ENHANCEMENT 2
+DYNAMIC LINEAGE DISCOVERY
+=================================================
+
+Challenge:
+
+Lineage documentation is unavailable.
+
+Enhance RCA by building lineage dynamically using:
+
+Priority 1
+Snowflake GET_LINEAGE
+
+Priority 2
+Snowflake ACCESS_HISTORY
+
+Priority 3
+SQL parsing
+
+Priority 4
+Task dependency graph
+
+Priority 5
+Procedure dependency graph
+
+Build lineage at investigation time.
+
+The RCA engine should identify:
+
+UPSTREAM
+
+- Source files
+- Source tables
+- Landing objects
+- Transformation layers
+- Tasks
+- Procedures
+- Pipelines
+
+DOWNSTREAM
+
+- Tables
+- Views
+- Data marts
+- DQ checks
+- Tasks
+- Procedures
+- Reports
+
+Store discovered lineage as investigation evidence.
+
+=================================================
+ENHANCEMENT 3
+CROSS-DOMAIN RCA CORRELATION
+=================================================
+
+RCA should not stop at the failing component.
+
+Example:
+
+AWS Failure
+↓
+Load Failure
+↓
+Procedure Failure
+↓
+Task Failure
+↓
+DQ Failure
+
+Instead of:
+
+Root Cause:
+DQ failed
+
+Return:
+
+Technical Root Cause:
+Missing source file in AWS landing.
+
+Fault Propagation:
+AWS Pipeline
+→ Snowflake Procedure
+→ Snowflake Task
+→ DQ Failure
+
+Business Impact:
+DQ checks failed because target dataset was not refreshed.
+
+The RCA should identify both:
+
+1. Actual Root Cause
+2. Failure Propagation Path
+
+=================================================
+ENHANCEMENT 4
+CONFIDENCE SCORING
+=================================================
+
+Each RCA must contain confidence score.
+
+Example:
+
+Confidence:
+94%
+
+Confidence Drivers:
+
+✓ Error identified
+✓ Dependency traced
+✓ Lineage resolved
+✓ First failing step found
+✓ Supporting evidence collected
+
+Low confidence RCA should explicitly state:
+
+"Human validation recommended"
+
+=================================================
+ENHANCEMENT 5
+FIRST FAILING STEP DETECTION
+=================================================
+
+For transformation issues:
+
+Identify first point of failure.
+
+Example:
+
+Source Count:
+2,451,221
+
+After Filter:
+2,451,221
+
+After Join:
+2,432,001
+
+After Aggregation:
+2,432,001
+
+Target:
+2,432,001
+
+Conclusion:
+
+First failing step:
+REF_CUSTOMER join
+
+Rows lost:
+19,220
+
+Root Cause Evidence:
+Missing reference mappings
+
+This information should be exposed directly on UI.
+
+=================================================
+ENHANCEMENT 6
+IMPACT ANALYSIS
+=================================================
+
+Every RCA should identify:
+
+Direct Impact
+
+Indirect Impact
+
+Examples:
+
+Impacted Tables
+
+Impacted Views
+
+Impacted Procedures
+
+Impacted Tasks
+
+Impacted DQ Checks
+
+Impacted Pipelines
+
+Impacted Reports
+
+Impacted Dashboards
+
+The RCA should distinguish:
+
+Severity:
+Critical
+High
+Medium
+Low
+
+And show:
+
+Immediate Impact
+
+Potential Downstream Impact
+
+=================================================
+ENHANCEMENT 7
+RCA UI PRESENTATION
+=================================================
+
+Current UI shows only RCA text.
+
+Enhance RCA output so UI can render a professional investigation dashboard.
+
+The RCA service should return structured sections.
+
+=================================================
+SECTION 1
+INCIDENT SUMMARY
+=================================================
+
+Show:
+
+Failure Type
+
+Failure Name
+
+Environment
+
+Detection Time
+
+Current Status
+
+Confidence Score
+
+Root Cause Category
+
+Example:
+
+DQ Failure
+Production
+
+Confidence:
+93%
+
+Root Cause Category:
+Business Mapping Issue
+
+=================================================
+SECTION 2
+ROOT CAUSE
+=================================================
+
+Provide:
+
+Root Cause Category
+
+Actual Root Cause
+
+Business-Friendly Explanation
+
+Technical Explanation
+
+Example:
+
+Business Explanation:
+
+New source values were introduced but were not added to the reference mapping.
+
+Technical Explanation:
+
+INNER JOIN with REF_MARKET dropped 18,234 records due to unmatched keys.
+
+=================================================
+SECTION 3
+INVESTIGATION JOURNEY
+=================================================
+
+This is critical.
+
+Show step-by-step investigation.
+
+Example:
+
+✓ Failure detected
+
+✓ Source validated
+
+✓ Target validated
+
+✓ Lineage resolved
+
+✓ Join analysis performed
+
+✓ Dependency analysis completed
+
+✓ RCA identified
+
+This helps operators trust the RCA.
+
+=================================================
+SECTION 4
+FAILURE PROPAGATION
+=================================================
+
+Visual chain.
+
+Example:
+
+AWS File Missing
+↓
+Procedure Failed
+↓
+Task Failed
+↓
+DQ Failed
+↓
+Dashboard Impacted
+
+This should be rendered as a graph or timeline.
+
+=================================================
+SECTION 5
+LINEAGE & IMPACT
+=================================================
+
+Display:
+
+Upstream Assets
+
+Target Asset
+
+Downstream Assets
+
+Highlight:
+
+Root Cause Node
+
+Failed Node
+
+Impacted Nodes
+
+Generate UI-friendly graph structure.
+
+Example:
+
+{
+  "nodes": [],
+  "edges": []
+}
+
+=================================================
+SECTION 6
+EVIDENCE
+=================================================
+
+For each evidence item:
+
+Evidence Type
+
+Evidence Source
+
+Summary
+
+Confidence Contribution
+
+Example:
+
+Evidence:
+Source Count Reconciliation
+
+Result:
+18,234 missing records
+
+Evidence Strength:
+High
+
+=================================================
+SECTION 7
+IMPACT SUMMARY
+=================================================
+
+Display cards:
+
+5 impacted tables
+
+2 failed procedures
+
+3 impacted DQ checks
+
+1 executive dashboard impacted
+
+Severity:
+High
+
+=================================================
+SECTION 8
+AI CONFIDENCE EXPLANATION
+=================================================
+
+Show why AI reached this RCA.
+
+Example:
+
+Confidence:
+93%
+
+Factors:
+
+✓ Lineage discovered
+
+✓ Upstream dependency identified
+
+✓ Matching error logs found
+
+✓ First failing step identified
+
+✓ Impact path validated
+
+This is important to build trust.
+
+=================================================
+OUTPUT REQUIREMENT
+=======================

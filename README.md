@@ -115,14 +115,116 @@ try { "frontend: " + (Invoke-WebRequest -Uri "http://localhost:5173/" -TimeoutSe
 
 ### 3. Claude LLM (Chat Agent)
 
-The chat agent uses Claude for human-like responses. The API key is configured in the `.env` file at the project root:
+The chat agent uses Claude for human-like responses. Configuration is in the `.env` file at the project root:
 ```
 ANTHROPIC_API_KEY=mga-0f973d609f7786b62a3fcd443d20e0957d0a9fec
+ANTHROPIC_BASE_URL=https://chat.int.bayer.com/anthropic
 CLAUDE_MODEL=claude-sonnet-4.5
 ```
-The backend loads this file automatically on startup — no manual environment variable setup needed. Without a valid key, agents fall back to deterministic template responses.
 
-### 4. (Optional) Go LIVE
+**All three variables are required for LLM to work:**
+- `ANTHROPIC_API_KEY` — the MGA token for the corporate Anthropic gateway
+- `ANTHROPIC_BASE_URL` — the corporate gateway URL (the MGA token does NOT work with the public `api.anthropic.com`)
+- `CLAUDE_MODEL` — which model to use
+
+The backend loads `.env` automatically on startup — no manual environment variable setup needed. Without a valid key OR without the correct base URL, agents fall back to deterministic template responses.
+
+> **Why does LLM work from Claude Code but not from a manual terminal?**
+> Claude Code's process inherits `ANTHROPIC_BASE_URL` from its parent environment. A fresh PowerShell terminal does NOT have this variable. Without it, the Anthropic SDK sends requests to `api.anthropic.com` (the public API), but the MGA token is only valid for the corporate gateway. Adding `ANTHROPIC_BASE_URL` to `.env` fixes this permanently — the backend loads it regardless of which terminal starts it.
+
+### 4. Restart Servers After Code Changes
+
+After modifying backend or frontend code, you must restart the corresponding server for changes to take effect.
+
+**Restart the backend:**
+```powershell
+# Step 1: Kill the running backend process
+$proc = Get-NetTCPConnection -LocalPort 8001 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique
+if ($proc) { $proc | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue } ; Start-Sleep 1 }
+
+# Step 2: Start fresh
+cd c:\Users\EKGAH\Documents\project\ops-monitor\backend
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8001
+```
+
+**Restart the frontend:**
+```powershell
+# Step 1: Kill the running Vite process (Ctrl+C in the terminal running it, or):
+Get-Process -Name "node" -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -eq "" } | Stop-Process -Force
+
+# Step 2: Start fresh
+cd c:\Users\EKGAH\Documents\project\ops-monitor\frontend
+npm run dev
+```
+
+**Quick restart both (single script):**
+```powershell
+# Kill existing servers
+$proc = Get-NetTCPConnection -LocalPort 8001 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique
+if ($proc) { $proc | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue } }
+Start-Sleep 1
+
+# Start backend in a new terminal
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd c:\Users\EKGAH\Documents\project\ops-monitor\backend; .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8001"
+
+# Start frontend in a new terminal
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd c:\Users\EKGAH\Documents\project\ops-monitor\frontend; npm run dev"
+```
+
+After restart, open **http://localhost:5173** and verify the chat responds naturally.
+
+### 5. Verify LLM is Working
+
+After starting the backend, run these checks to confirm the Claude LLM is active and responding:
+
+**Step 1: Check health endpoint**
+```powershell
+(Invoke-RestMethod http://localhost:8001/api/health).llm | ConvertTo-Json
+```
+Expected output:
+```json
+{
+  "available": true,
+  "model": "claude-sonnet-4.5",
+  "last_error": null
+}
+```
+- `available: true` → API key is set and client initialized
+- `last_error: null` → no errors on last LLM call
+- If `last_error` shows `authentication_error` → the MGA token in `.env` has expired; get a fresh one
+
+**Step 2: Test chat LLM response**
+```powershell
+$body = '{"message":"How are you","session_id":"verify"}'
+$r = Invoke-RestMethod -Uri "http://localhost:8001/api/chat" -Method Post -Body $body -ContentType "application/json" -TimeoutSec 30
+Write-Host "Reply length: $($r.reply.Length)"
+Write-Host "Intent: $($r.intent)"
+Write-Host ""
+Write-Host $r.reply.Substring(0, [Math]::Min(300, $r.reply.Length))
+```
+- **LLM working**: Reply length > 400, contains markdown formatting and contextual suggestions
+- **LLM NOT working** (template fallback): Reply length < 300, starts with "Hey! I'm doing great"
+
+**Step 3: Test RCA agent LLM**
+```powershell
+$body = '{"pipeline_id":"dq_1_20260709_120000"}'
+$r = Invoke-RestMethod -Uri "http://localhost:8001/api/rca" -Method Post -Body $body -ContentType "application/json" -TimeoutSec 60
+Write-Host "RCA confidence: $($r.confidence)"
+Write-Host "Has root_cause: $($r.root_cause -ne $null)"
+Write-Host "Has code_analysis: $($r.code_analysis.llm_explanation -ne $null)"
+```
+- `confidence > 0.8` and `Has root_cause: True` → LLM is enhancing the RCA
+
+**Troubleshooting:**
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| `available: false` | No `ANTHROPIC_API_KEY` in `.env` | Add valid key to `.env` and restart backend |
+| `last_error: authentication_error` | MGA token expired OR `ANTHROPIC_BASE_URL` missing | Ensure `.env` has `ANTHROPIC_BASE_URL=https://chat.int.bayer.com/anthropic`; get fresh MGA token if needed |
+| `last_error: connection error` | Corporate proxy/gateway down | Check VPN and `https://chat.int.bayer.com/anthropic` accessibility |
+| Reply is short/template-like | LLM call failed silently | Check `last_error` via health endpoint |
+| Works from Claude Code but not manual terminal | `ANTHROPIC_BASE_URL` was missing from `.env` | Already fixed — `.env` now includes it. Just restart backend |
+
+### 6. (Optional) Go LIVE
 Open **Settings** in the UI and enter AWS + Snowflake credentials. Saving any real
 credential automatically flips the platform from MOCK to LIVE mode. Provide a
 `preprod_account` for real zero-copy clone validation.

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { api } from '../api/client'
+import ReactMarkdown from 'react-markdown'
+import { api, chatStream } from '../api/client'
 
 function buildWelcome(context) {
   const dash = context.dashboard || {}
@@ -118,17 +119,25 @@ export default function ChatWindow({ activePipeline, notices = [], activityConte
   const [msgs, setMsgs] = useState([{ role: 'bot', agent: 'chat', text: welcome }])
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
+  const [streamingMsg, setStreamingMsg] = useState(null)
   const endRef = useRef(null)
   const seenNotices = useRef(new Set())
   const lastPipelineId = useRef(null)
   const welcomeKey = useRef('')
+  const [sessionId] = useState(() => {
+    const stored = sessionStorage.getItem('opsmon_session')
+    if (stored) return stored
+    const id = crypto.randomUUID()
+    sessionStorage.setItem('opsmon_session', id)
+    return id
+  })
 
   const quickActions = useMemo(
     () => getQuickActions(activityContext, activePipeline),
     [activityContext, activePipeline],
   )
 
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [msgs])
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [msgs, streamingMsg])
 
   useEffect(() => {
     const key = `${activityContext.tab}:${activityContext.dashboard?.view}`
@@ -166,26 +175,49 @@ export default function ChatWindow({ activePipeline, notices = [], activityConte
     setMsgs((m) => [...m, { role: 'user', text }])
     setInput('')
     setBusy(true)
-    api.chat(text, activePipeline?.id, activityContext)
-      .then((r) => {
-        let reply = r.reply
-        if (r.payload && r.intent === 'validate_fix') {
-          const s = r.payload.summary
-          reply += `\n\nTest cases: ${s.passed}/${s.total} passed.`
-        }
-        setMsgs((m) => [...m, { role: 'bot', agent: r.agent, text: reply }])
-      })
-      .catch((e) => {
-        setMsgs((m) => [...m, { role: 'bot', agent: 'error', text: 'Error: ' + e.message }])
-        api.reportActivityError({
-          tab: activityContext.tab || 'Chat',
-          action: 'send message',
-          error: e.message,
-          details: activityContext,
-        }).then((r) => setMsgs((m) => [...m, { role: 'bot', agent: 'chat', text: r.reply }]))
-          .catch(() => {})
-      })
-      .finally(() => setBusy(false))
+    setStreamingMsg({ role: 'bot', agent: 'chat', text: '' })
+
+    chatStream(text, activePipeline?.id, activityContext, sessionId, {
+      onMeta: (meta) => {
+        setStreamingMsg((prev) => ({ ...prev, agent: meta.agent }))
+      },
+      onChunk: (chunk) => {
+        setStreamingMsg((prev) => ({ ...prev, text: prev.text + chunk }))
+      },
+      onDone: (payload) => {
+        setStreamingMsg((prev) => {
+          if (prev) {
+            let finalText = prev.text
+            if (payload && payload.summary && payload.summary.passed != null) {
+              const s = payload.summary
+              finalText += `\n\nTest cases: ${s.passed}/${s.total} passed.`
+            }
+            setMsgs((m) => [...m, { role: 'bot', agent: prev.agent, text: finalText }])
+          }
+          return null
+        })
+        setBusy(false)
+      },
+      onError: (err) => {
+        setStreamingMsg(null)
+        // Fallback to synchronous API
+        api.chat(text, activePipeline?.id, { ...activityContext, session_id: sessionId })
+          .then((r) => {
+            setMsgs((m) => [...m, { role: 'bot', agent: r.agent, text: r.reply }])
+          })
+          .catch((e) => {
+            setMsgs((m) => [...m, { role: 'bot', agent: 'error', text: 'Error: ' + e.message }])
+            api.reportActivityError({
+              tab: activityContext.tab || 'Chat',
+              action: 'send message',
+              error: e.message,
+              details: activityContext,
+            }).then((r) => setMsgs((m) => [...m, { role: 'bot', agent: 'chat', text: r.reply }]))
+              .catch(() => {})
+          })
+          .finally(() => setBusy(false))
+      },
+    })
   }
 
   const send = () => sendText(input)
@@ -220,10 +252,20 @@ export default function ChatWindow({ activePipeline, notices = [], activityConte
         {msgs.map((m, i) => (
           <div key={i} className={`msg ${m.role}`}>
             {m.role === 'bot' && <div className="agent-tag">{agentLabel(m.agent)}</div>}
-            {m.text}
+            {m.role === 'bot'
+              ? <div className="msg-markdown"><ReactMarkdown>{m.text}</ReactMarkdown></div>
+              : m.text}
           </div>
         ))}
-        {busy && <div className="msg bot"><span className="spinner">thinking…</span></div>}
+        {streamingMsg && (
+          <div className="msg bot">
+            <div className="agent-tag">{agentLabel(streamingMsg.agent)}</div>
+            <div className="msg-markdown">
+              <ReactMarkdown>{streamingMsg.text || '…'}</ReactMarkdown>
+            </div>
+          </div>
+        )}
+        {busy && !streamingMsg && <div className="msg bot"><span className="spinner">thinking…</span></div>}
         <div ref={endRef} />
       </div>
       <div className="chat-quick-actions">

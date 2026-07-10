@@ -5,7 +5,7 @@ able to drive any step interactively. Mirrors a Claude-Code-style harness where 
 skilled agent is invoked as a tool by the orchestrator.
 """
 from __future__ import annotations
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from app.agents.chat_agent import ChatAgent
 from app.agents.connectivity_agent import ConnectivityAgent
@@ -48,8 +48,15 @@ class Orchestrator:
         return self.test.validate(pipeline_id, fix_id)
 
     def chat_message(self, message: str, pipeline_id: Optional[str] = None,
-                     context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        return self.chat.handle(message, pipeline_id, context)
+                     context: Optional[Dict[str, Any]] = None,
+                     history: Optional[List[Dict[str, str]]] = None) -> Dict[str, Any]:
+        return self.chat.handle(message, pipeline_id, context, history)
+
+    def chat_stream(self, message: str, pipeline_id: Optional[str] = None,
+                    context: Optional[Dict[str, Any]] = None,
+                    history: Optional[List[Dict[str, str]]] = None):
+        """Returns (metadata_dict, text_generator) for SSE streaming."""
+        return self.chat.handle_stream(message, pipeline_id, context, history)
 
     # end-to-end auto-remediation pipeline (used by /api/remediate) -----
     def auto_remediate(self, pipeline_id: str) -> Dict[str, Any]:

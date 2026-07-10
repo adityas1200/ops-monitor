@@ -1,4 +1,5 @@
 from __future__ import annotations
+import json
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from app.agents.base import BaseAgent
@@ -169,8 +170,14 @@ class RCAAgent(BaseAgent):
         ]).lower()
         for rule in rules:
             pattern = (rule.get("PATTERN") or "").lower()
-            if pattern and pattern in context_lower:
+            if not pattern:
+                continue
+            words = pattern.split()
+            match_count = sum(1 for w in words if w in context_lower)
+            if match_count >= max(2, len(words) // 2):
+                rule["_match_score"] = match_count
                 matched.append(rule)
+        matched.sort(key=lambda r: r.get("_match_score", 0), reverse=True)
         return matched[:5]
 
     def update_resolution(self, pipeline_id: str, resolution: str) -> None:
@@ -184,6 +191,60 @@ class RCAAgent(BaseAgent):
                 (MEMORY_DIR / self.memory.file).write_text(
                     json.dumps(all_mem, indent=2, default=str), encoding="utf-8")
                 break
+
+    # ── LLM-first methods ────────────────────────────────────────────────────
+
+    def _generate_narrative(self, result: Dict[str, Any]) -> Optional[str]:
+        """Generate a natural-language expert briefing for the chat reply."""
+        if not self.harness.available:
+            return None
+        system = (
+            "You are a senior data operations analyst briefing a colleague on a failure investigation. "
+            "Be direct, specific, and expert. Reference actual task names, table names, and error messages. "
+            "Use markdown: **bold** for key terms, `code` for SQL identifiers, bullet points for lists. "
+            "Keep it to 4-6 sentences. End with a clear recommended next action. "
+            "Do NOT use generic phrases like 'I found the issue' — jump straight to the findings."
+        )
+        messages = [{"role": "user", "content": json.dumps({
+            "task_name": result.get("root_cause_name"),
+            "category": result.get("category"),
+            "summary": result.get("summary"),
+            "confidence": result.get("confidence_level"),
+            "error": (result.get("evidence") or [""])[0][:300],
+            "impact_summary": result.get("impact_summary"),
+            "remediation_immediate": (result.get("remediation") or {}).get("immediate_fix"),
+            "downstream_count": len(result.get("impacted_nodes") or []),
+            "tables": [t.get("table") for t in (result.get("affected_tables") or [])[:5]],
+        }, default=str)}]
+        return self.harness.speak(system, messages, max_tokens=800)
+
+    def _llm_remediation(self, category: str, target: Dict[str, Any],
+                         root: Dict[str, Any], extra_context: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """Generate specific remediation using LLM with actual failure context."""
+        if not self.harness.available:
+            return None
+        system = (
+            "You are a Snowflake/data-ops expert. Given a failure, produce SPECIFIC remediation. "
+            "Reference exact object names, SQL patterns, and concrete actions. "
+            "Do NOT give generic advice — every sentence must be grounded in the failure details. "
+            "Output raw JSON only — NO markdown code fences. Start with { and end with }. "
+            "Use these EXACT keys: immediate_fix, permanent_fix, monitoring_recommendation. "
+            "Keep each value to 1-2 sentences."
+        )
+        user_payload = json.dumps({
+            "category": category,
+            "task_name": target.get("name"),
+            "root_cause_task": root.get("name"),
+            "error": (root.get("error") or target.get("error") or "")[:500],
+            "tables": target.get("tables", [])[:5],
+            "platform": target.get("platform"),
+            "warehouse": target.get("warehouse"),
+            "extra_context": extra_context,
+        }, default=str)
+        txt = self.harness.reason(system, user_payload, max_tokens=1200)
+        if not txt:
+            return None
+        return self._extract_json(txt)
 
     # ── Private helpers ────────────────────────────────────────────────────────
 
@@ -364,7 +425,19 @@ class RCAAgent(BaseAgent):
         root: Dict[str, Any],
         extra_context: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Derive Remediation section from category and context."""
+        """Try LLM-generated remediation first, fall back to templates."""
+        llm_result = self._llm_remediation(category, target, root, extra_context)
+        if llm_result and llm_result.get("immediate_fix"):
+            return llm_result
+        return self._template_remediation(category, target, root)
+
+    def _template_remediation(
+        self,
+        category: str,
+        target: Dict[str, Any],
+        root: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Deterministic fallback remediation templates by category."""
         error = (root.get("error") or target.get("error") or "").strip()
         name = root.get("name") or target.get("name") or "the failed task"
 
@@ -451,76 +524,43 @@ class RCAAgent(BaseAgent):
             "monitoring_recommendation": "Enable enhanced logging for this task and alert on any non-SUCCESS state.",
         }
 
-    def _build_rca_report(
+    def _build_propagation_chain(
         self,
-        task_name: str,
-        execution_time: str,
-        failure_type: str,
-        summary: str,
-        detailed_analysis: str,
-        evidence: List[str],
-        upstream_text: str,
-        downstream_text: str,
-        impact: Dict[str, Any],
-        remediation: Dict[str, Any],
-        confidence_level: str,
-    ) -> str:
-        """Generate the structured RCA report text matching the skill's Output Format."""
-        ev_lines = "\n".join(f"  • {e}" for e in evidence) if evidence else "  • No additional evidence."
-        imp_tables   = ", ".join(impact.get("impacted_tables", [])[:10]) or "None identified"
-        imp_pipelines = ", ".join(impact.get("impacted_pipelines", [])[:10]) or "None identified"
-        imp_reports  = ", ".join(impact.get("impacted_reports", [])) or "None identified"
-        severity     = impact.get("business_severity", "Unknown")
-
-        up_text   = upstream_text   or "(no upstream lineage resolved)"
-        down_text = downstream_text or "(no downstream lineage resolved)"
-
-        return (
-            "================================================\n"
-            "RCA REPORT\n"
-            "================================================\n\n"
-            f"Task Name:      {task_name}\n"
-            f"Execution Time: {execution_time}\n"
-            f"Failure Type:   {failure_type}\n\n"
-            "----------------------------------------\n"
-            "ROOT CAUSE\n"
-            "----------------------------------------\n\n"
-            f"Summary:\n  {summary}\n\n"
-            f"Detailed Analysis:\n  {detailed_analysis}\n\n"
-            f"Evidence:\n{ev_lines}\n\n"
-            "----------------------------------------\n"
-            "UPSTREAM LINEAGE\n"
-            "----------------------------------------\n\n"
-            f"{up_text}\n\n"
-            "----------------------------------------\n"
-            "DOWNSTREAM LINEAGE\n"
-            "----------------------------------------\n\n"
-            f"{down_text}\n\n"
-            "----------------------------------------\n"
-            "IMPACT ASSESSMENT\n"
-            "----------------------------------------\n\n"
-            f"Impacted Tables:    {imp_tables}\n"
-            f"Impacted Pipelines: {imp_pipelines}\n"
-            f"Impacted Reports:   {imp_reports}\n"
-            f"Business Severity:  {severity}\n\n"
-            "----------------------------------------\n"
-            "REMEDIATION\n"
-            "----------------------------------------\n\n"
-            f"Immediate Fix:\n  {remediation.get('immediate_fix', '')}\n\n"
-            f"Permanent Fix:\n  {remediation.get('permanent_fix', '')}\n\n"
-            f"Monitoring Recommendation:\n  {remediation.get('monitoring_recommendation', '')}\n\n"
-            "----------------------------------------\n"
-            "CONFIDENCE SCORE\n"
-            "----------------------------------------\n\n"
-            f"{confidence_level}\n\n"
-            "================================================"
-        )
+        root_key: str,
+        target_key: str,
+        root: Dict[str, Any],
+        target: Dict[str, Any],
+        impacted_keys: List[str],
+        graph: Dict[str, Dict[str, Any]],
+        run_by_key: Dict[str, Dict[str, Any]],
+        dq_related: List[Dict[str, Any]],
+        downstream_consumers: Dict[str, Any],
+    ) -> List[Dict[str, Any]]:
+        """Build a linear failure propagation chain for UI rendering."""
+        chain: List[Dict[str, Any]] = []
+        root_name = root.get("name") or root_key
+        chain.append({"name": root_name, "type": root.get("platform", "task"), "status": "root_cause"})
+        if root_key != target_key:
+            chain.append({"name": target.get("name", target_key), "type": "task", "status": "failed"})
+        for k in impacted_keys[:2]:
+            r = run_by_key.get(k, {})
+            chain.append({"name": r.get("name", k), "type": "task", "status": "impacted"})
+        for dq in dq_related[:1]:
+            chain.append({"name": dq.get("name", ""), "type": "dq", "status": "failed"})
+        for item in (downstream_consumers.get("details") or [])[:3]:
+            if any(kw in item.get("name", "").lower() for kw in ("report", "dashboard", "mart", "bi", "kpi")):
+                chain.append({"name": item["name"], "type": "report", "status": "impacted"})
+                break
+        return chain
 
     # ── Main analysis entry-points ─────────────────────────────────────────────
 
     def analyze(self, pipeline_id: str, extra_context: Optional[str] = None) -> Dict[str, Any]:
         if pipeline_id.startswith("dq_"):
             return self.analyze_dq(pipeline_id, extra_context)
+
+        journey: List[Dict[str, str]] = []
+        structured_evidence: List[Dict[str, Any]] = []
 
         # ── Step 1: Identify failed object ────────────────────────────────────
         lineage = LineageService()
@@ -536,6 +576,9 @@ class RCAAgent(BaseAgent):
         graph = lineage.load_task_graph()
 
         target_key = target.get("task_key") or pipeline_id
+        journey.append({"step": "Failure detected", "status": "done",
+                        "detail": f"{target.get('name')} — status {target.get('status')}"})
+
         # ── Step 2: Classify failure ──────────────────────────────────────────
         root_key = self._walk_upstream_root(target, run_by_key, graph)
         root = run_by_key.get(root_key, target)
@@ -545,6 +588,10 @@ class RCAAgent(BaseAgent):
 
         impacted_keys = self._downstream_impact(root_key, graph)
         category = _classify(root.get("error") or target.get("error"))
+        journey.append({"step": "Failure classified", "status": "done",
+                        "detail": f"{category}"})
+        journey.append({"step": "Upstream dependency traced", "status": "done",
+                        "detail": f"Root cause node: {root.get('name', root_key)}"})
 
         # ── Lineage graphs ────────────────────────────────────────────────────
         lineage_graph = self._build_lineage(target_key, root_key, impacted_keys, graph, run_by_key)
@@ -565,6 +612,9 @@ class RCAAgent(BaseAgent):
             context_schema=target.get("schema", ""),
         )
         table_lineage = lineage.enrich_table_lineage_with_downstream(table_lineage, downstream_map)
+
+        journey.append({"step": "Lineage resolved", "status": "done",
+                        "detail": f"{len(lineage_graph.get('nodes', []))} nodes, {len(impacted_keys)} downstream impacted"})
 
         # --- Two-section lineage graphs ---------------------------------------
         upstream_lineage = lineage.build_upstream_lineage_graph(
@@ -600,27 +650,44 @@ class RCAAgent(BaseAgent):
         evidence: List[str] = []
         if target.get("name"):
             evidence.append(f"Task Name: {target['name']}")
+            structured_evidence.append({"type": "task_metadata", "source": "Task History",
+                                        "summary": f"Task: {target['name']}", "strength": "high", "confidence_contribution": 0.0})
         if target.get("status"):
             evidence.append(f"Task State: {target['status']}")
         if root.get("error"):
             evidence.append(f"Error Message: {root['error']}")
+            structured_evidence.append({"type": "error_message", "source": "Snowflake Error Log",
+                                        "summary": root["error"][:200], "strength": "high", "confidence_contribution": 0.05})
         if root.get("query_id"):
             evidence.append(f"Root Query ID: {root['query_id']}")
+            structured_evidence.append({"type": "query_id", "source": "Query History",
+                                        "summary": f"Query ID: {root['query_id']}", "strength": "high", "confidence_contribution": 0.05})
         if target.get("started_at"):
             evidence.append(f"Start Time: {target['started_at']}")
         if target.get("ended_at"):
             evidence.append(f"End Time: {target['ended_at']}")
         if target.get("tables"):
             evidence.append(f"Tables in failed task: {', '.join(target['tables'][:8])}")
+            structured_evidence.append({"type": "table_resolution", "source": "SQL Parsing / ACCOUNT_USAGE",
+                                        "summary": f"{len(target['tables'])} table(s) resolved", "strength": "high", "confidence_contribution": 0.05})
         if dq_related:
             evidence.append(
                 f"{len(dq_related)} related DQ failure(s): "
                 + ", ".join(c.get("name", "") for c in dq_related[:5]))
+            structured_evidence.append({"type": "dq_correlation", "source": "DQ Validation Summary",
+                                        "summary": f"{len(dq_related)} correlated DQ failure(s)", "strength": "medium", "confidence_contribution": 0.03})
         if root.get("log_ref"):
             from app.connectors.aws_connector import AWSConnector
             from app.connectors.snowflake_connector import SnowflakeConnector
             getter = SnowflakeConnector() if root.get("platform") == "snowflake" else AWSConnector()
-            evidence += getter.get_logs(root["log_ref"])[:6]
+            log_lines = getter.get_logs(root["log_ref"])[:6]
+            evidence += log_lines
+            if log_lines:
+                structured_evidence.append({"type": "log_entry", "source": "Execution Logs",
+                                            "summary": f"{len(log_lines)} log line(s) retrieved", "strength": "medium", "confidence_contribution": 0.03})
+
+        journey.append({"step": "Evidence collected", "status": "done",
+                        "detail": f"{len(evidence)} evidence item(s)"})
 
         # ── Impact assessment + remediation (skill sections) ─────────────────
         impact_assessment = self._build_impact_assessment(
@@ -669,6 +736,20 @@ class RCAAgent(BaseAgent):
         procedure_io = lineage.resolve_task_procedure_io(
             root_db, root_schema, root_task_name, root.get("tables"))
 
+        # ── Fetch upstream procedure chain (2-3 levels deep) ────────────────
+        procedure_chain: List[Dict[str, Any]] = []
+        if root_db and root_schema and root_task_name:
+            procedure_chain = lineage.fetch_upstream_procedure_chain(
+                root_db, root_schema, root_task_name, depth=3)
+
+        # ── If DQ-related, also execute DQ SQL ──────────────────────────────
+        dq_execution_result = None
+        if dq_related:
+            dq_conn = DQConnector()
+            first_dq = dq_related[0]
+            dq_execution_result = dq_conn.execute_dq_rule(
+                first_dq.get("name") or "", subject_area=first_dq.get("table_name"))
+
         # ── Memory: smart recall by tables ──────────────────────────────────
         table_priors = self._recall_by_tables(target.get("tables", []))
         all_priors = (prior or []) + table_priors
@@ -681,6 +762,20 @@ class RCAAgent(BaseAgent):
         )
 
         # ── Claude harness (uses the full rca.md skill) ───────────────────────
+        chain_for_llm = [
+            {"object": c["object_name"], "type": c["object_type"],
+             "sql": c["sql_body"][:1500], "inputs": c["inputs"][:5], "outputs": c["outputs"][:5]}
+            for c in procedure_chain[:3]
+        ] if procedure_chain else None
+
+        dq_exec_for_llm = None
+        if dq_execution_result and dq_execution_result.get("executed"):
+            dq_exec_for_llm = {
+                "row_count": dq_execution_result["row_count"],
+                "columns": dq_execution_result["columns"],
+                "sample_rows": dq_execution_result["rows"][:10],
+            }
+
         llm = self.think({
             "task_name": target.get("name"),
             "task_state": target.get("status"),
@@ -697,7 +792,14 @@ class RCAAgent(BaseAgent):
             "impacted_downstream_count": len(impacted_keys),
             "task_definition_sql": (task_sql or "")[:2000],
             "procedure_io": procedure_io,
-            "sql_analysis_request": "Analyze this SQL and explain why it failed given the error message.",
+            "upstream_procedure_chain": chain_for_llm,
+            "dq_execution_results": dq_exec_for_llm,
+            "sql_analysis_request": (
+                "CRITICAL: Analyze the SQL/procedure chain and identify the SPECIFIC root cause. "
+                "Reference exact table names, column names, and SQL conditions. "
+                "If procedure chain is provided, trace the data flow and identify where the logic breaks. "
+                "Provide root_cause as a structured object with explanation, entities, and code_snippets."
+            ),
             "prior_rca_cases": [
                 {"error_pattern": p.get("error_pattern"), "category": p.get("category"),
                  "resolution": p.get("resolution_applied"), "analysis": p.get("code_analysis_summary")}
@@ -705,7 +807,7 @@ class RCAAgent(BaseAgent):
             ],
             "domain_knowledge": knowledge_rules[:3],
             "extra_context": extra_context,
-        }, max_tokens=2500)
+        }, max_tokens=4000)
 
         # ── Build code_analysis ──────────────────────────────────────────────
         code_analysis: Dict[str, Any] = {
@@ -736,6 +838,39 @@ class RCAAgent(BaseAgent):
             elif llm.get("detailed_analysis"):
                 code_analysis["llm_explanation"] = llm["detailed_analysis"]
 
+        # ── Structured root_cause from LLM ───────────────────────────────────
+        root_cause_obj = None
+        if llm and llm.get("root_cause"):
+            root_cause_obj = llm["root_cause"]
+        elif llm:
+            entities = [{"name": t, "type": "table"} for t in (target.get("tables") or [])[:5]]
+            root_cause_obj = {
+                "explanation": llm.get("detailed_analysis") or summary,
+                "entities": entities,
+                "code_snippets": [],
+                "comparison": None,
+            }
+
+        # ── Impact summary one-liner ─────────────────────────────────────────
+        impact_summary = None
+        if llm and llm.get("impact_summary"):
+            impact_summary = llm["impact_summary"]
+        else:
+            n_tables = len(impact_assessment.get("impacted_tables", []))
+            n_reports = len(impact_assessment.get("impacted_reports", []))
+            n_pipelines = len(impact_assessment.get("impacted_pipelines", []))
+            parts = []
+            if n_tables:
+                parts.append(f"{n_tables} table(s)")
+            if n_pipelines:
+                parts.append(f"{n_pipelines} pipeline(s)")
+            if n_reports:
+                report_names = ", ".join(impact_assessment["impacted_reports"][:2])
+                parts.append(f"{n_reports} report(s) including {report_names}")
+            if len(impacted_keys):
+                parts.append(f"{len(impacted_keys)} downstream task(s)")
+            impact_summary = ", ".join(parts) if parts else "No downstream impact identified"
+
         # ── Text lineage diagrams (skill format) ─────────────────────────────
         upstream_text = (
             llm.get("upstream_lineage_text") if llm else None
@@ -744,21 +879,41 @@ class RCAAgent(BaseAgent):
             llm.get("downstream_lineage_text") if llm else None
         ) or _lineage_text(downstream_lineage.get("nodes", []), downstream_lineage.get("edges", []))
 
-        # ── Structured RCA report text ────────────────────────────────────────
-        execution_time = f"{target.get('started_at', 'N/A')} – {target.get('ended_at', 'N/A')}"
-        rca_report = self._build_rca_report(
-            task_name=target.get("name", pipeline_id),
-            execution_time=execution_time,
-            failure_type=category,
-            summary=summary,
-            detailed_analysis=detailed_analysis,
-            evidence=evidence,
-            upstream_text=upstream_text,
-            downstream_text=downstream_text,
-            impact=impact_assessment,
-            remediation=remediation,
-            confidence_level=confidence_lvl,
-        )
+        journey.append({"step": "RCA identified", "status": "done",
+                        "detail": f"{category} — {confidence_lvl} confidence ({round(confidence * 100)}%)"})
+
+        # ── New structured output fields ─────────────────────────────────────
+        confidence_drivers = [
+            {"factor": "Error identified", "met": bool(root.get("error"))},
+            {"factor": "Dependency traced", "met": root_key != target_key},
+            {"factor": "Lineage resolved", "met": bool(lineage_graph.get("nodes"))},
+            {"factor": "First failing step found", "met": bool(root_key)},
+            {"factor": "Supporting evidence collected", "met": len(evidence) >= 3},
+            {"factor": "Impact path validated", "met": len(impacted_keys) > 0},
+            {"factor": "Prior case matched", "met": bool(all_priors)},
+        ]
+
+        failure_propagation = self._build_propagation_chain(
+            root_key, target_key, root, target, impacted_keys,
+            graph, run_by_key, dq_related, downstream_consumers)
+
+        incident_summary_obj = {
+            "failure_type": category,
+            "failure_name": target.get("name", pipeline_id),
+            "environment": "Production",
+            "detection_time": target.get("started_at"),
+            "current_status": target.get("status"),
+            "confidence_score": round(confidence * 100),
+            "root_cause_category": category,
+        }
+
+        if root_cause_obj:
+            root_cause_obj["business_explanation"] = (
+                (llm.get("root_cause") or {}).get("business_explanation") if llm else None
+            ) or summary
+            root_cause_obj["technical_explanation"] = (
+                (llm.get("root_cause") or {}).get("technical_explanation") if llm else None
+            ) or detailed_analysis
 
         incident = self.incident_log.log({
             "pipeline_id": pipeline_id, "name": target["name"], "platform": target["platform"],
@@ -782,8 +937,15 @@ class RCAAgent(BaseAgent):
             "evidence": evidence,
             "recommended_next": "fix",
             "impact_assessment": impact_assessment,
+            "impact_summary": impact_summary,
+            "root_cause": root_cause_obj,
             "remediation": remediation,
-            "rca_report": rca_report,
+            # Investigation dashboard fields
+            "incident_summary": incident_summary_obj,
+            "investigation_journey": journey,
+            "failure_propagation": failure_propagation,
+            "confidence_drivers": confidence_drivers,
+            "structured_evidence": structured_evidence,
             # Lineage
             "upstream_lineage": upstream_lineage,
             "upstream_lineage_text": upstream_text,
@@ -802,9 +964,12 @@ class RCAAgent(BaseAgent):
             "downstream_consumers": downstream_consumers,
             "refinement": refinement,
             "code_analysis": code_analysis,
+            "procedure_chain": procedure_chain[:3] if procedure_chain else None,
+            "dq_execution_result": dq_execution_result if dq_execution_result and dq_execution_result.get("executed") else None,
             "knowledge_applied": knowledge_rules[:3] if knowledge_rules else None,
             "seen_before": bool(all_priors),
         }
+        result["chat_narrative"] = self._generate_narrative(result)
         self.learn({
             "signature": signature,
             "pipeline_id": pipeline_id,
@@ -821,6 +986,9 @@ class RCAAgent(BaseAgent):
         return result
 
     def analyze_dq(self, check_id: str, extra_context: Optional[str] = None) -> Dict[str, Any]:
+        journey: List[Dict[str, str]] = []
+        structured_evidence: List[Dict[str, Any]] = []
+
         lineage = LineageService()
         all_checks = DQConnector().read_results()
         check = next((c for c in all_checks if c["id"] == check_id), None)
@@ -828,6 +996,9 @@ class RCAAgent(BaseAgent):
             return {"error": f"DQ check {check_id} not found"}
 
         check = {**check, "tables": lineage.resolve_dq_tables(check)}
+        journey.append({"step": "Failure detected", "status": "done",
+                        "detail": f"DQ check '{check.get('name')}' — status {check.get('status')}"})
+
         pipelines = [lineage.enrich_pipeline(p) for p in MonitoringAgent().collect()]
         idx = {p["id"]: p for p in pipelines}
         run_by_key = index_runs_by_task_key(pipelines)
@@ -849,6 +1020,10 @@ class RCAAgent(BaseAgent):
         category = _classify(check.get("error"))
         if root_task:
             category = _classify(root_task.get("error") or check.get("error"))
+        journey.append({"step": "Failure classified", "status": "done", "detail": category})
+        if related_tasks:
+            journey.append({"step": "Related task failures correlated", "status": "done",
+                            "detail": f"{len(related_tasks)} task(s) share tables with this DQ check"})
 
         table_roles: Dict[str, str] = {}
         for t in check_tables:
@@ -911,6 +1086,9 @@ class RCAAgent(BaseAgent):
                 edges.append({"from": tkey, "to": check_id})
             lineage_graph = {"nodes": nodes, "edges": edges}
 
+        journey.append({"step": "Lineage resolved", "status": "done",
+                        "detail": f"{len(lineage_graph.get('nodes', []))} nodes discovered"})
+
         relevant_keys = {root_key_task, *impacted_keys} if root_task else set()
         for p in related_tasks:
             relevant_keys.add(p.get("task_key") or p["id"])
@@ -948,14 +1126,24 @@ class RCAAgent(BaseAgent):
                 })
 
         evidence = [f"DQ check: {check.get('name')} — {check.get('status', 'FAILED')}"]
+        structured_evidence.append({"type": "dq_check", "source": "DQ Validation Summary",
+                                    "summary": f"DQ check '{check.get('name')}' failed", "strength": "high", "confidence_contribution": 0.05})
         if check.get("error"):
             evidence.append(f"Error Message: {check['error']}")
+            structured_evidence.append({"type": "error_message", "source": "DQ Check Output",
+                                        "summary": check["error"][:200], "strength": "high", "confidence_contribution": 0.05})
         if check_tables:
             evidence.append(f"Tables from DQ: {', '.join(sorted(check_tables)[:8])}")
+            structured_evidence.append({"type": "table_resolution", "source": "DQ Rule / SQL Parsing",
+                                        "summary": f"{len(check_tables)} table(s) identified", "strength": "high", "confidence_contribution": 0.05})
         if related_tasks:
             evidence.append(
                 f"{len(related_tasks)} related failed task(s) share table(s): "
                 + ", ".join(p.get("name", "") for p in related_tasks[:4]))
+            structured_evidence.append({"type": "task_correlation", "source": "Task Monitoring",
+                                        "summary": f"{len(related_tasks)} correlated failed task(s)", "strength": "medium", "confidence_contribution": 0.03})
+        journey.append({"step": "Evidence collected", "status": "done",
+                        "detail": f"{len(evidence)} evidence item(s)"})
 
         if root_task:
             summary = (
@@ -984,11 +1172,32 @@ class RCAAgent(BaseAgent):
 
         confidence = 0.78 if check_tables else 0.55
 
-        # ── DQ SQL deep-dive: fetch rule definition ──────────────────────────
-        dq_rule = DQConnector().fetch_dq_rule_sql(check.get("name") or "")
+        # ── DQ SQL deep-dive: fetch rule definition + EXECUTE it ────────────
+        dq_conn = DQConnector()
+        dq_rule = dq_conn.fetch_dq_rule_sql(check.get("name") or "", subject_area=check.get("table_name"))
         dq_rule_sql = None
+        dq_execution_result = None
         if dq_rule:
             dq_rule_sql = "\n".join(f"{k}: {v}" for k, v in dq_rule.items() if v)[:3000]
+            dq_execution_result = dq_conn.execute_dq_rule(
+                check.get("name") or "", subject_area=check.get("table_name"))
+            row_count = dq_execution_result.get("row_count", 0) if dq_execution_result else 0
+            journey.append({"step": "DQ rule SQL executed", "status": "done",
+                            "detail": f"Rule fetched and executed — {row_count} failing row(s) returned"})
+        else:
+            journey.append({"step": "DQ rule SQL executed", "status": "done",
+                            "detail": "No SQL rule definition found"})
+
+        # ── Fetch upstream procedure chain (2-3 levels) ──────────────────────
+        procedure_chain: List[Dict[str, Any]] = []
+        if root_task:
+            rt_meta = graph.get(root_key_task, {})
+            rt_db = rt_meta.get("database") or root_task.get("database") or ""
+            rt_schema = rt_meta.get("schema") or root_task.get("schema") or ""
+            rt_task_name = rt_meta.get("task_name") or ""
+            if rt_db and rt_schema and rt_task_name:
+                procedure_chain = lineage.fetch_upstream_procedure_chain(
+                    rt_db, rt_schema, rt_task_name, depth=3)
 
         # ── Memory: recall priors for DQ checks ──────────────────────────────
         dq_signature = f"dq {category} {(check.get('error') or '')[:50]}"
@@ -1003,6 +1212,22 @@ class RCAAgent(BaseAgent):
             check.get("error"), check.get("name"), list(check_tables))
 
         # ── LLM analysis for DQ ──────────────────────────────────────────────
+        dq_exec_context = None
+        if dq_execution_result and dq_execution_result.get("executed"):
+            dq_exec_context = {
+                "row_count": dq_execution_result["row_count"],
+                "columns": dq_execution_result["columns"],
+                "sample_rows": dq_execution_result["rows"][:10],
+            }
+        elif dq_execution_result and dq_execution_result.get("error"):
+            dq_exec_context = {"execution_error": dq_execution_result["error"]}
+
+        chain_for_llm = [
+            {"object": c["object_name"], "type": c["object_type"],
+             "sql": c["sql_body"][:1500], "inputs": c["inputs"][:5], "outputs": c["outputs"][:5]}
+            for c in procedure_chain[:3]
+        ] if procedure_chain else None
+
         llm = self.think({
             "analysis_type": "dq_check",
             "qc_id": check.get("name"),
@@ -1012,6 +1237,8 @@ class RCAAgent(BaseAgent):
             "check_type": check.get("column_name"),
             "tables": list(check_tables)[:10],
             "dq_rule_definition": dq_rule_sql[:2000] if dq_rule_sql else None,
+            "dq_execution_results": dq_exec_context,
+            "upstream_procedure_chain": chain_for_llm,
             "related_failed_tasks": [
                 {"name": p.get("name"), "error": (p.get("error") or "")[:100]}
                 for p in related_tasks[:3]
@@ -1023,9 +1250,15 @@ class RCAAgent(BaseAgent):
                 for p in all_priors[:3]
             ],
             "domain_knowledge": knowledge_rules[:3],
-            "sql_analysis_request": "Analyze the DQ rule SQL and explain why this check failed.",
+            "sql_analysis_request": (
+                "CRITICAL: Compare the DQ rule SQL with the upstream procedure SQL chain. "
+                "Identify the SPECIFIC filter, join, or transformation mismatch causing the failure. "
+                "Reference exact table names and column names. "
+                "If DQ execution results are provided, explain what the failing rows reveal. "
+                "Provide root_cause as a structured object."
+            ),
             "extra_context": extra_context,
-        }, max_tokens=2000)
+        }, max_tokens=4000)
 
         code_analysis: Dict[str, Any] = {
             "task_sql": dq_rule_sql,
@@ -1064,22 +1297,86 @@ class RCAAgent(BaseAgent):
         if remediation_override:
             remediation.update(remediation_override)
 
+        # ── Structured root_cause from LLM ───────────────────────────────────
+        root_cause_obj = None
+        if llm and llm.get("root_cause"):
+            root_cause_obj = llm["root_cause"]
+        elif llm:
+            # Fallback: construct from available LLM fields
+            entities = [{"name": t, "type": "table"} for t in list(check_tables)[:5]]
+            root_cause_obj = {
+                "explanation": llm.get("detailed_analysis") or summary,
+                "entities": entities,
+                "code_snippets": [],
+                "comparison": None,
+            }
+
+        # ── Impact summary one-liner ─────────────────────────────────────────
+        impact_summary = None
+        if llm and llm.get("impact_summary"):
+            impact_summary = llm["impact_summary"]
+        else:
+            n_tables = len(impact_assessment.get("impacted_tables", []))
+            n_reports = len(impact_assessment.get("impacted_reports", []))
+            n_pipelines = len(impact_assessment.get("impacted_pipelines", []))
+            parts = []
+            if n_tables:
+                parts.append(f"{n_tables} table(s)")
+            if n_pipelines:
+                parts.append(f"{n_pipelines} pipeline(s)")
+            if n_reports:
+                report_names = ", ".join(impact_assessment["impacted_reports"][:2])
+                parts.append(f"{n_reports} report(s) including {report_names}")
+            if len(impacted_keys):
+                parts.append(f"{len(impacted_keys)} downstream task(s)")
+            impact_summary = ", ".join(parts) if parts else "No downstream impact identified"
+
         upstream_text = _lineage_text(dq_upstream_lineage.get("nodes", []), dq_upstream_lineage.get("edges", []))
         downstream_text = _lineage_text(dq_downstream_lineage.get("nodes", []), dq_downstream_lineage.get("edges", []))
-        execution_time = check.get("run_at", "N/A")
-        rca_report = self._build_rca_report(
-            task_name=f"DQ: {check.get('name', check_id)}",
-            execution_time=execution_time,
-            failure_type=category,
-            summary=summary,
-            detailed_analysis=detailed_analysis,
-            evidence=evidence,
-            upstream_text=upstream_text,
-            downstream_text=downstream_text,
-            impact=impact_assessment,
-            remediation=remediation,
-            confidence_level=confidence_lvl,
-        )
+
+        journey.append({"step": "RCA identified", "status": "done",
+                        "detail": f"{category} — {confidence_lvl} confidence ({round(confidence * 100)}%)"})
+
+        # ── New structured output fields ─────────────────────────────────────
+        confidence_drivers = [
+            {"factor": "Error identified", "met": bool(check.get("error"))},
+            {"factor": "Related task correlated", "met": bool(root_task)},
+            {"factor": "Lineage resolved", "met": bool(lineage_graph.get("nodes"))},
+            {"factor": "DQ rule SQL analyzed", "met": bool(dq_rule_sql)},
+            {"factor": "Supporting evidence collected", "met": len(evidence) >= 3},
+            {"factor": "Impact path validated", "met": len(impacted_keys) > 0},
+            {"factor": "Prior case matched", "met": bool(all_priors)},
+        ]
+
+        dq_propagation: List[Dict[str, Any]] = []
+        if root_task:
+            dq_propagation.append({"name": root_task.get("name", ""), "type": "task", "status": "root_cause"})
+        dq_propagation.append({"name": f"DQ: {check.get('name', '')}", "type": "dq", "status": "failed"})
+        for k in impacted_keys[:2]:
+            r = run_by_key.get(k, {})
+            dq_propagation.append({"name": r.get("name", k), "type": "task", "status": "impacted"})
+        for item in (downstream_consumers.get("details") or [])[:3]:
+            if any(kw in item.get("name", "").lower() for kw in ("report", "dashboard", "mart", "bi")):
+                dq_propagation.append({"name": item["name"], "type": "report", "status": "impacted"})
+                break
+
+        incident_summary_obj = {
+            "failure_type": category,
+            "failure_name": f"DQ: {check.get('name', check_id)}",
+            "environment": "Production",
+            "detection_time": check.get("run_at"),
+            "current_status": check.get("status"),
+            "confidence_score": round(confidence * 100),
+            "root_cause_category": category,
+        }
+
+        if root_cause_obj:
+            root_cause_obj["business_explanation"] = (
+                (llm.get("root_cause") or {}).get("business_explanation") if llm else None
+            ) or summary
+            root_cause_obj["technical_explanation"] = (
+                (llm.get("root_cause") or {}).get("technical_explanation") if llm else None
+            ) or detailed_analysis
 
         incident = self.incident_log.log({
             "pipeline_id": check_id, "name": check.get("name"), "platform": "dq",
@@ -1102,8 +1399,16 @@ class RCAAgent(BaseAgent):
             "evidence": evidence,
             "recommended_next": "fix" if root_task else "investigate",
             "impact_assessment": impact_assessment,
+            "impact_summary": impact_summary,
+            "root_cause": root_cause_obj,
             "remediation": remediation,
-            "rca_report": rca_report,
+            # Investigation dashboard fields
+            "incident_summary": incident_summary_obj,
+            "investigation_journey": journey,
+            "failure_propagation": dq_propagation,
+            "confidence_drivers": confidence_drivers,
+            "structured_evidence": structured_evidence,
+            # Lineage
             "upstream_lineage": dq_upstream_lineage,
             "upstream_lineage_text": upstream_text,
             "downstream_lineage": dq_downstream_lineage,
@@ -1122,9 +1427,12 @@ class RCAAgent(BaseAgent):
             "downstream_consumers": downstream_consumers,
             "refinement": None,
             "code_analysis": code_analysis,
+            "procedure_chain": procedure_chain[:3] if procedure_chain else None,
+            "dq_execution_result": dq_execution_result if dq_execution_result and dq_execution_result.get("executed") else None,
             "knowledge_applied": knowledge_rules[:3] if knowledge_rules else None,
             "seen_before": bool(all_priors),
         }
+        result["chat_narrative"] = self._generate_narrative(result)
         self.learn({
             "signature": dq_signature,
             "pipeline_id": check_id,

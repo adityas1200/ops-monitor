@@ -8,6 +8,22 @@ const COLORS = {
   source:     '#4f8cff',   // raw / seed tables — blue
 }
 
+const COLORS_UPSTREAM = {
+  root_cause: '#ff5c6c',
+  failed:     '#8b95a5',
+  impacted:   '#8b95a5',
+  healthy:    '#8b95a5',
+  source:     '#b0b8c4',
+}
+
+const COLORS_DOWNSTREAM = {
+  root_cause: '#ff5c6c',
+  failed:     '#e74c3c',
+  impacted:   '#e74c3c',
+  healthy:    '#ffb547',
+  source:     '#8b95a5',
+}
+
 const NODE_SIZES = {
   table:     { w: 170, h: 40 },
   task:      { w: 155, h: 38 },
@@ -58,7 +74,8 @@ function layout(nodes, edges) {
   return { pos, width, height }
 }
 
-function LineageGraphSvg({ nodes, edges }) {
+function LineageGraphSvg({ nodes, edges, colorMap }) {
+  const colors = colorMap || COLORS
   const { pos, width, height } = layout(nodes, edges)
 
   return (
@@ -100,7 +117,7 @@ function LineageGraphSvg({ nodes, edges }) {
       {nodes.map((n) => {
         const p = pos[n.id]
         if (!p) return null
-        const c = COLORS[n.state] || '#6b7689'
+        const c = colors[n.state] || '#6b7689'
         const size = NODE_SIZES[n.type] || NODE_SIZES.table
         // Use label (task-graph nodes) or name (table-graph nodes)
         const text = n.label || n.name || n.id
@@ -172,8 +189,13 @@ export default function TableLineageGraph({
   direction,
   hideTitle = false,
   defaultOpen = true,
+  colorScheme,
 }) {
   const [open, setOpen] = useState(defaultOpen)
+
+  const colorMap = colorScheme === 'upstream' ? COLORS_UPSTREAM
+    : colorScheme === 'downstream' ? COLORS_DOWNSTREAM
+    : COLORS
 
   if (!tableLineage?.nodes?.length) return null
 
@@ -188,7 +210,7 @@ export default function TableLineageGraph({
       : null
 
   if (hideTitle) {
-    return <LineageGraphSvg nodes={nodes} edges={edges} />
+    return <LineageGraphSvg nodes={nodes} edges={edges} colorMap={colorMap} />
   }
 
   const sectionTitle = title || 'Table Lineage'
@@ -250,7 +272,7 @@ export default function TableLineageGraph({
               scroll to zoom · drag to pan · double-click to reset
             </span>
           </div>
-          <LineageGraphSvg nodes={nodes} edges={edges} />
+          <LineageGraphSvg nodes={nodes} edges={edges} colorMap={colorMap} />
         </div>
       )}
     </div>
