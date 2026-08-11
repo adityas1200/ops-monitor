@@ -4,13 +4,16 @@ import Dashboard from './components/Dashboard'
 import Workbench from './components/Workbench'
 import Settings from './components/Settings'
 import ChatWindow from './components/ChatWindow'
+import ChatFab from './components/ChatFab'
 
 export default function App() {
   const [tab, setTab] = useState('dashboard')
   const [platforms, setPlatforms] = useState({ snowflake: false, aws: false })
   const [activePipeline, setActivePipeline] = useState(null)
+  const [chatOpen, setChatOpen] = useState(false)
   const [chatNotices, setChatNotices] = useState([])
   const [dashboardContext, setDashboardContext] = useState(null)
+  const [dashDates, setDashDates] = useState({ dateFrom: null, dateTo: null })
   const [theme, setTheme] = useState(() => localStorage.getItem('ops-monitor-theme') || 'light')
 
   useEffect(() => {
@@ -19,6 +22,8 @@ export default function App() {
   }, [theme])
 
   const toggleTheme = () => setTheme((t) => (t === 'light' ? 'dark' : 'light'))
+  const openChat = useCallback(() => setChatOpen(true), [])
+  const closeChat = useCallback(() => setChatOpen(false), [])
 
   const reportActivityError = useCallback(async (payload) => {
     const ctx = { tab, platforms, ...payload.details }
@@ -31,14 +36,21 @@ export default function App() {
       })
       const id = `activity:${payload.tab}:${payload.action}:${payload.error}`
       setChatNotices((prev) => [...prev, { id, agent: 'chat', text: r.reply }])
+      setChatOpen(true)
     } catch (e) {
       setChatNotices((prev) => [...prev, {
         id: `activity-fb:${Date.now()}`,
         agent: 'chat',
         text: `Something went wrong during ${payload.action}: ${payload.error || e.message}`,
       }])
+      setChatOpen(true)
     }
   }, [tab, platforms])
+
+  useEffect(() => {
+    // One shared warmup for the whole SPA (deduped in api.client).
+    api.snowflakeWarmup().catch(() => {})
+  }, [])
 
   useEffect(() => {
     api.health().then((h) => setPlatforms(h.platforms || {})).catch(() => {})
@@ -65,7 +77,12 @@ export default function App() {
     } : null,
   }
 
-  const onChatContextChange = useCallback((ctx) => setDashboardContext(ctx), [])
+  const onChatContextChange = useCallback((ctx) => {
+    setDashboardContext(ctx)
+    if (ctx?.dateFrom || ctx?.dateTo) {
+      setDashDates({ dateFrom: ctx.dateFrom || null, dateTo: ctx.dateTo || null })
+    }
+  }, [])
 
   return (
     <div className="app">
@@ -105,6 +122,8 @@ export default function App() {
               onSelect={setActivePipeline}
               onReportError={reportActivityError}
               onChatContextChange={onChatContextChange}
+              chatOpen={chatOpen}
+              onOpenChat={openChat}
             />
           </div>
           <div style={{ display: tab === 'workbench' ? 'block' : 'none' }}>
@@ -113,6 +132,8 @@ export default function App() {
               onSelect={setActivePipeline}
               onReportError={reportActivityError}
               onBackToDashboard={() => setTab('dashboard')}
+              dateFrom={dashDates.dateFrom || dashboardContext?.dateFrom}
+              dateTo={dashDates.dateTo || dashboardContext?.dateTo}
             />
           </div>
           <div style={{ display: tab === 'settings' ? 'block' : 'none' }}>
@@ -122,13 +143,18 @@ export default function App() {
             />
           </div>
         </div>
-        <div className="chat-pane">
+
+        <div className={`chat-pane${chatOpen ? ' open' : ''}`} aria-hidden={!chatOpen}>
           <ChatWindow
             activePipeline={activePipeline}
             notices={chatNotices}
             activityContext={chatContext}
+            onToggleCollapsed={closeChat}
           />
         </div>
+
+        {/* FAB on non-dashboard tabs; Dashboard renders its own for the requested placement */}
+        {tab !== 'dashboard' && !chatOpen && <ChatFab onOpen={openChat} />}
       </div>
     </div>
   )

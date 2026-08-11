@@ -1,7 +1,9 @@
 from __future__ import annotations
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from app.agents.base import BaseAgent
 from app.connectors.aws_connector import AWSConnector
@@ -9,8 +11,11 @@ from app.connectors.dq_connector import DQConnector
 from app.connectors.snowflake_connector import SnowflakeConnector
 from app.core.config import load_settings, platforms_configured
 
-_COLLECT_CACHE: Dict[str, Any] = {"key": None, "ts": 0.0, "records": []}
+_COLLECT_CACHE: Dict[str, Any] = {"key": None, "ts": 0.0, "records": [], "filled": False}
 _COLLECT_CACHE_TTL_S = 90
+# Avoid re-scanning the full incident log for every failed row on each summary call.
+_LOGGED_INCIDENT_KEYS: Set[str] = set()
+_LOGGED_INCIDENT_LOCK = threading.Lock()
 
 
 class MonitoringAgent(BaseAgent):
@@ -22,15 +27,19 @@ class MonitoringAgent(BaseAgent):
         cache_key = f"{date_from}|{date_to}"
         now = time.time()
         if (_COLLECT_CACHE["key"] == cache_key
-                and _COLLECT_CACHE["records"]
-                and now - _COLLECT_CACHE["ts"] < _COLLECT_CACHE_TTL_S):
+                and now - _COLLECT_CACHE["ts"] < _COLLECT_CACHE_TTL_S
+                and _COLLECT_CACHE.get("filled")):
             return list(_COLLECT_CACHE["records"])
 
         sf = SnowflakeConnector()
         aws = AWSConnector()
-        records: List[Dict[str, Any]] = []
-        records += sf.read_telemetry(date_from, date_to)
-        records += aws.read_telemetry()
+        # Parallel: Snowflake TASK_HISTORY + AWS Glue (each may take several seconds).
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            fut_sf = pool.submit(sf.read_telemetry, date_from, date_to)
+            fut_aws = pool.submit(aws.read_telemetry)
+            sf_rows = fut_sf.result()
+            aws_rows = fut_aws.result()
+        records: List[Dict[str, Any]] = list(sf_rows) + list(aws_rows)
         self._connector_errors = []
         if sf.last_error:
             self._connector_errors.append({"platform": "snowflake", "error": sf.last_error})
@@ -45,7 +54,7 @@ class MonitoringAgent(BaseAgent):
                 continue
             seen.add(r["id"])
             merged.append(self._flag_delay(r))
-        _COLLECT_CACHE.update({"key": cache_key, "ts": now, "records": merged})
+        _COLLECT_CACHE.update({"key": cache_key, "ts": now, "records": merged, "filled": True})
         return merged
 
     def _flag_delay(self, r: Dict[str, Any]) -> Dict[str, Any]:
@@ -69,7 +78,7 @@ class MonitoringAgent(BaseAgent):
         if status_filter and status_filter.upper() != "ALL":
             filtered = [p for p in pipelines if p["status"] == status_filter.upper()]
 
-        # log new incidents
+        # log new incidents (cheap in-process de-dupe; avoid O(n) file scans per row)
         for p in pipelines:
             if p["status"] in ("FAILED", "DELAYED"):
                 self._log_incident(p)
@@ -85,19 +94,29 @@ class MonitoringAgent(BaseAgent):
         }
 
     def dq_summary(self, date_from: Optional[str] = None,
-                   date_to: Optional[str] = None) -> Dict[str, Any]:
-        return DQConnector().summary(date_from, date_to)
+                   date_to: Optional[str] = None,
+                   revalidate: bool = True) -> Dict[str, Any]:
+        return DQConnector().summary(date_from, date_to, revalidate=revalidate)
 
     def _log_incident(self, p: Dict[str, Any]) -> None:
-        sig = f"{p['platform']} {p['status']} {(p.get('error') or '')[:60]}"
-        existing = [i for i in self.incident_log.all() if i.get("pipeline_id") == p["id"]
-                    and i.get("status") == p["status"]]
-        if existing:
-            return
-        prior = self.incident_log.find_by_signature(sig)
-        self.incident_log.log({
-            "pipeline_id": p["id"], "name": p["name"], "platform": p["platform"],
-            "status": p["status"], "error": p.get("error"), "signature": sig,
-            "source": "monitoring",
-            "seen_before": bool(prior),
-        })
+        key = f"{p.get('id')}|{p.get('status')}"
+        # Claim the key under a lock so concurrent summary calls cannot both pass
+        # the membership check. Keep the in-process set (O(1)) — do not reintroduce
+        # per-row incident_log.all() scans.
+        with _LOGGED_INCIDENT_LOCK:
+            if key in _LOGGED_INCIDENT_KEYS:
+                return
+            _LOGGED_INCIDENT_KEYS.add(key)
+        try:
+            self.incident_log.log({
+                "pipeline_id": p["id"], "name": p["name"], "platform": p["platform"],
+                "status": p["status"], "error": p.get("error"),
+                "signature": f"{p['platform']} {p['status']} {(p.get('error') or '')[:60]}",
+                "source": "monitoring",
+                "seen_before": False,
+            })
+        except Exception:
+            # Allow a retry if persistence failed after we claimed the key.
+            with _LOGGED_INCIDENT_LOCK:
+                _LOGGED_INCIDENT_KEYS.discard(key)
+            raise

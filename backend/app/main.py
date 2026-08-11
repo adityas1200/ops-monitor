@@ -2,6 +2,7 @@
 from __future__ import annotations
 from pathlib import Path
 from typing import Optional
+import threading
 
 import json as _json
 
@@ -31,6 +32,19 @@ app.add_middleware(
 )
 
 
+def _warm_snowflake_background() -> None:
+    """Open one shared Snowflake session at startup so the first /api/summary is not blocked on SSO."""
+    try:
+        SnowflakeConnector().warm()
+    except Exception:
+        pass
+
+
+@app.on_event("startup")
+def on_startup() -> None:
+    threading.Thread(target=_warm_snowflake_background, daemon=True, name="sf-warmup").start()
+
+
 @app.get("/api/health")
 def health():
     s = load_settings()
@@ -42,6 +56,23 @@ def health():
         "llm": {"available": USE_CLAUDE, "model": CLAUDE_MODEL if USE_CLAUDE else None,
                 "last_error": orchestrator.chat.harness.last_error},
     }
+
+
+@app.get("/api/snowflake/warmup")
+def snowflake_warmup(force: bool = Query(default=False)):
+    """Warm (or reuse) the shared Snowflake session.
+
+    First call may open SSO; later calls return immediately while the
+    in-process session is still within TTL. Token reuse across process
+    restarts uses the Snowflake driver's secure local storage / keyring.
+    """
+    return SnowflakeConnector().warm(force_ping=bool(force))
+
+
+@app.get("/api/snowflake/session")
+def snowflake_session():
+    """Non-blocking session status (no SSO / no network ping)."""
+    return SnowflakeConnector().session_status()
 
 
 # ---- Connectivity -----------------------------------------------------
@@ -112,8 +143,9 @@ def summary(status: Optional[str] = Query(default="FAILED"),
 
 
 @app.get("/api/dq/summary")
-def dq_summary(date_from: Optional[str] = None, date_to: Optional[str] = None):
-    return orchestrator.get_dq_summary(date_from, date_to)
+def dq_summary(date_from: Optional[str] = None, date_to: Optional[str] = None,
+               revalidate: bool = True):
+    return orchestrator.get_dq_summary(date_from, date_to, revalidate=revalidate)
 
 
 @app.get("/api/dq/details/{qc_id}")
@@ -127,13 +159,10 @@ def dq_details(qc_id: str, subject_area: Optional[str] = None):
     sql_code = rule.get("SQL_CODE") or ""
     sql_results = None
     if sql_code.strip() and sql_code.strip().upper().startswith(("SELECT", "WITH")):
-        warehouse = rule.get("WAREHOUSE") or None
-        # Derive database context from the rules table FQN (SQL typically runs against that DB)
-        from app.core.config import get_dq_monitoring_config
-        dq_cfg = get_dq_monitoring_config()
-        rules_fqn = dq_cfg.get("rules_table_fqn", "")
-        database = rule.get("DATABASE") or (rules_fqn.split(".")[0] if "." in rules_fqn else None)
-        sql_results = dq.execute_dq_sql(sql_code, database=database, warehouse=warehouse)
+        # Same context resolution the dashboard/RCA verdict uses, so this panel and
+        # the dashboard status always agree.
+        database, schema, warehouse = dq.resolve_rule_context(rule, sql_code)
+        sql_results = dq.execute_dq_sql(sql_code, database=database, schema=schema, warehouse=warehouse)
     return {"qc_id": qc_id, "subject_area": subject_area, "found": True, "rule": rule, "sql_results": sql_results}
 
 
@@ -151,7 +180,9 @@ def pipeline_logs(pipeline_id: str):
 # ---- RCA --------------------------------------------------------------
 @app.post("/api/rca")
 def rca(req: RCARequest):
-    return orchestrator.run_rca(req.pipeline_id, req.extra_context)
+    return orchestrator.run_rca(
+        req.pipeline_id, req.extra_context, date_from=req.date_from, date_to=req.date_to,
+    )
 
 
 # ---- RCA Knowledge Base -----------------------------------------------
@@ -210,7 +241,9 @@ def add_rca_knowledge(payload: dict):
 # ---- Fix --------------------------------------------------------------
 @app.post("/api/fix")
 def fix(req: FixRequest):
-    return orchestrator.suggest_fix(req.pipeline_id, req.incident_id, req.user_edit)
+    return orchestrator.suggest_fix(
+        req.pipeline_id, req.incident_id, req.user_edit, req.rca_context,
+    )
 
 
 # ---- Validate (zero-copy clone + tests) ------------------------------

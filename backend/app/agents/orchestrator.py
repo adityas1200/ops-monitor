@@ -34,15 +34,18 @@ class Orchestrator:
         return self.monitoring.summary(status, date_from, date_to)
 
     def get_dq_summary(self, date_from: Optional[str] = None,
-                       date_to: Optional[str] = None) -> Dict[str, Any]:
-        return self.monitoring.dq_summary(date_from, date_to)
+                       date_to: Optional[str] = None,
+                       revalidate: bool = True) -> Dict[str, Any]:
+        return self.monitoring.dq_summary(date_from, date_to, revalidate=revalidate)
 
-    def run_rca(self, pipeline_id: str, extra_context: Optional[str] = None) -> Dict[str, Any]:
-        return self.rca.analyze(pipeline_id, extra_context)
+    def run_rca(self, pipeline_id: str, extra_context: Optional[str] = None,
+                date_from: Optional[str] = None, date_to: Optional[str] = None) -> Dict[str, Any]:
+        return self.rca.analyze(pipeline_id, extra_context, date_from=date_from, date_to=date_to)
 
     def suggest_fix(self, pipeline_id: str, incident_id: Optional[str] = None,
-                    user_edit: Optional[str] = None) -> Dict[str, Any]:
-        return self.fix.suggest(pipeline_id, incident_id, user_edit)
+                    user_edit: Optional[str] = None,
+                    rca_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        return self.fix.suggest(pipeline_id, incident_id, user_edit, rca_context)
 
     def validate_fix(self, pipeline_id: str, fix_id: Optional[str] = None) -> Dict[str, Any]:
         return self.test.validate(pipeline_id, fix_id)

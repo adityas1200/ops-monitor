@@ -35,6 +35,16 @@ def _ts(value: Any) -> Optional[str]:
 
 _shared_conn = None
 _shared_conn_params_key: Optional[str] = None
+_shared_conn_warmed_at: Optional[float] = None
+_connect_lock = __import__("threading").Lock()
+_warm_lock = __import__("threading").Lock()
+_warm_inflight = None  # threading Event + result holder for single-flight warm
+_INFO_SCHEMA_LOOKBACK_DAYS = 14
+_TASK_HISTORY_RESULT_LIMIT = 1000
+# How long we treat an open backend session as "warm" without re-pinging Snowflake.
+_SESSION_TTL_S = 50 * 60
+# How often a warm session is health-checked with SELECT 1 (not full SSO).
+_SESSION_PING_EVERY_S = 10 * 60
 
 
 def _params_cache_key(params: Dict[str, Any]) -> str:
@@ -44,7 +54,7 @@ def _params_cache_key(params: Dict[str, Any]) -> str:
 
 def reset_shared_connection():
     """Invalidate cached connection (called when settings change)."""
-    global _shared_conn, _shared_conn_params_key
+    global _shared_conn, _shared_conn_params_key, _shared_conn_warmed_at
     if _shared_conn:
         try:
             _shared_conn.close()
@@ -52,6 +62,7 @@ def reset_shared_connection():
             pass
     _shared_conn = None
     _shared_conn_params_key = None
+    _shared_conn_warmed_at = None
 
 
 class SnowflakeConnector:
@@ -142,28 +153,143 @@ class SnowflakeConnector:
         return {k: v for k, v in params.items() if v is not None}
 
     def _connect(self):
-        global _shared_conn, _shared_conn_params_key
+        global _shared_conn, _shared_conn_params_key, _shared_conn_warmed_at
         if self._conn:
             return self._conn
         params = self._connect_params()
+        # Keep session alive so the next /api/summary does not re-auth / wake warehouse cold.
+        params.setdefault("client_session_keep_alive", True)
+        # DQ rules (e.g. QC 17 COUNT DISTINCT over large LAAD tables) often need several
+        # minutes. A 60s client network_timeout cancels them with 000604 even when the
+        # same SQL succeeds in the Snowflake UI and returns matching SOURCE/TARGET counts.
+        params.setdefault("network_timeout", 600)
+        # Cache IdP tokens in OS secure storage so SSO browser is not required every restart.
+        # Requires: pip install "snowflake-connector-python[secure-local-storage]"
+        auth = str(params.get("authenticator") or "").lower()
+        if auth == "externalbrowser" or auth.startswith("http"):
+            params.setdefault("client_store_temporary_credential", True)
         key = _params_cache_key(params)
-        if _shared_conn and _shared_conn_params_key == key:
+        with _connect_lock:
+            if self._conn:
+                return self._conn
+            if _shared_conn and _shared_conn_params_key == key:
+                try:
+                    if getattr(_shared_conn, "is_closed", lambda: False)():
+                        raise RuntimeError("shared connection closed")
+                    self._conn = _shared_conn
+                    return self._conn
+                except Exception:
+                    _shared_conn = None
+                    _shared_conn_params_key = None
+                    _shared_conn_warmed_at = None
+            import snowflake.connector as sf  # lazy import
             try:
-                _shared_conn.cursor().execute("SELECT 1")
-                self._conn = _shared_conn
+                self._conn = sf.connect(**params)
+                _shared_conn = self._conn
+                _shared_conn_params_key = key
+                import time as _time
+                _shared_conn_warmed_at = _time.time()
                 return self._conn
             except Exception:
-                _shared_conn = None
-                _shared_conn_params_key = None
-        import snowflake.connector as sf  # lazy import
-        try:
-            self._conn = sf.connect(**params)
-            _shared_conn = self._conn
-            _shared_conn_params_key = key
-            return self._conn
-        except Exception:
-            self._conn = None
-            raise
+                self._conn = None
+                raise
+
+    def session_status(self) -> Dict[str, Any]:
+        """Cheap status of the shared in-process Snowflake session (no network)."""
+        import time as _time
+        now = _time.time()
+        alive = False
+        if _shared_conn is not None:
+            try:
+                alive = not getattr(_shared_conn, "is_closed", lambda: False)()
+            except Exception:
+                alive = False
+        warmed_at = _shared_conn_warmed_at
+        expires_at = (warmed_at + _SESSION_TTL_S) if warmed_at else None
+        remaining = max(0, int(expires_at - now)) if expires_at else 0
+        return {
+            "warmed": bool(alive and remaining > 0),
+            "alive": alive,
+            "warmed_at": (
+                datetime.fromtimestamp(warmed_at, tz=timezone.utc).isoformat()
+                if warmed_at else None
+            ),
+            "expires_at": (
+                datetime.fromtimestamp(expires_at, tz=timezone.utc).isoformat()
+                if expires_at else None
+            ),
+            "ttl_s": remaining,
+            "detail": (
+                "Snowflake session ready (reused)" if alive and remaining > 0
+                else "Snowflake session not ready"
+            ),
+        }
+
+    def warm(self, *, force_ping: bool = False) -> Dict[str, Any]:
+        """Establish (or reuse) the shared Snowflake session. Single-flight SSO.
+
+        - If an open session exists within TTL → return immediately (no SELECT 1).
+        - If open but older than ping interval → cheap SELECT 1 health check.
+        - Concurrent callers share one connect/SSO attempt.
+        """
+        import time as _time
+        global _warm_inflight, _shared_conn_warmed_at
+
+        if not self._configured():
+            return {"warmed": False, "detail": "Snowflake not configured", "ttl_s": 0}
+
+        status = self.session_status()
+        if status["warmed"] and not force_ping:
+            # Optional periodic ping without re-SSO.
+            age = (_time.time() - (_shared_conn_warmed_at or 0))
+            if age < _SESSION_PING_EVERY_S:
+                return {**status, "reused": True}
+
+        with _warm_lock:
+            status = self.session_status()
+            if status["warmed"] and not force_ping:
+                age = (_time.time() - (_shared_conn_warmed_at or 0))
+                if age < _SESSION_PING_EVERY_S:
+                    return {**status, "reused": True}
+            # Single-flight: if another thread is warming, wait for it.
+            if _warm_inflight is not None:
+                evt, box = _warm_inflight
+            else:
+                evt = __import__("threading").Event()
+                box: Dict[str, Any] = {}
+                _warm_inflight = (evt, box)
+
+                def _do_warm() -> None:
+                    global _shared_conn_warmed_at, _warm_inflight
+                    try:
+                        cur = self._connect().cursor()
+                        cur.execute("SELECT 1")
+                        cur.fetchone()
+                        _shared_conn_warmed_at = _time.time()
+                        box["result"] = {
+                            **self.session_status(),
+                            "reused": False,
+                            "detail": "Snowflake session ready",
+                        }
+                    except Exception as e:  # noqa: BLE001
+                        self.last_error = str(e)
+                        box["result"] = {
+                            "warmed": False,
+                            "detail": str(e)[:300],
+                            "ttl_s": 0,
+                            "reused": False,
+                        }
+                    finally:
+                        with _warm_lock:
+                            _warm_inflight = None
+                        evt.set()
+
+                __import__("threading").Thread(
+                    target=_do_warm, daemon=True, name="sf-warm-once"
+                ).start()
+
+        evt.wait(timeout=130)
+        return box.get("result") or {"warmed": False, "detail": "Warmup timed out", "ttl_s": 0}
 
     # ---- monitoring reads --------------------------------------------
     def read_telemetry(self, date_from: Optional[str] = None,
@@ -187,61 +313,141 @@ class SnowflakeConnector:
         if date_to:
             range_to = _iso_date(date_to, end_of_day=True) or range_to
 
+        # INFORMATION_SCHEMA.TASK_HISTORY only covers ~7 days and is far faster than
+        # ACCOUNT_USAGE. Use it for recent dashboard ranges; fall back to ACCOUNT_USAGE
+        # only when the requested window is older. Always push the date filter into the
+        # source scan — never scan historical_months then filter afterward.
+        today = datetime.now(timezone.utc).date()
+        try:
+            from_d = datetime.fromisoformat(range_from).date()
+            to_d = datetime.fromisoformat(range_to).date()
+        except ValueError:
+            from_d, to_d = today - timedelta(days=7), today
+        info_schema_floor = today - timedelta(days=_INFO_SCHEMA_LOOKBACK_DAYS)
+        use_fast_history = from_d >= info_schema_floor
+        include_future = to_d >= today
+
         try:
             cur = self._connect().cursor()
-            sql = f"""
-                WITH HISTORICAL_TASKS AS (
-                    SELECT
-                        NAME              AS TASK_NAME,
-                        DATABASE_NAME,
-                        SCHEMA_NAME,
-                        STATE,
-                        QUERY_ID,
-                        SCHEDULED_TIME,
-                        QUERY_START_TIME,
-                        COMPLETED_TIME,
-                        ERROR_CODE,
-                        ERROR_MESSAGE,
-                        'HISTORICAL'      AS RECORD_TYPE
-                    FROM SNOWFLAKE.ACCOUNT_USAGE.TASK_HISTORY
-                    WHERE SCHEDULED_TIME >= DATEADD(MONTH, -{historical_months}, CURRENT_TIMESTAMP())
-                      AND DATABASE_NAME = %s
-                      AND NAME ILIKE %s
-                ),
+            if use_fast_history:
+                # INFORMATION_SCHEMA.TASK_HISTORY rejects windows longer than 7 days.
+                hist_start = from_d.isoformat()
+                hist_end = min(to_d + timedelta(days=1), from_d + timedelta(days=7)).isoformat()
+                future_cte = ""
+                future_union = ""
+                params: list = [hist_start, hist_end, monitor_db, name_pattern, range_from, range_to]
+                if include_future:
+                    future_cte = f""",
                 FUTURE_TASKS AS (
                     SELECT
-                        NAME              AS TASK_NAME,
-                        DATABASE_NAME,
-                        SCHEMA_NAME,
-                        STATE,
-                        QUERY_ID,
-                        SCHEDULED_TIME,
-                        QUERY_START_TIME,
-                        COMPLETED_TIME,
-                        ERROR_CODE,
-                        ERROR_MESSAGE,
-                        'SCHEDULED'       AS RECORD_TYPE
+                        NAME AS TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE,
+                        CASE
+                            WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'
+                            WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'
+                            WHEN UPPER(STATE) IN ('RUNNING', 'EXECUTING') THEN 'RUNNING'
+                            WHEN UPPER(STATE) = 'SCHEDULED'            THEN 'SCHEDULED'
+                            ELSE 'OTHER'
+                        END AS TASK_RESULT,
+                        SCHEDULED_TIME, QUERY_START_TIME, COMPLETED_TIME,
+                        QUERY_ID, ERROR_CODE, ERROR_MESSAGE,
+                        'SCHEDULED' AS RECORD_TYPE,
+                        DATEDIFF('second', QUERY_START_TIME, COMPLETED_TIME) AS DURATION_S
                     FROM TABLE(
                         INFORMATION_SCHEMA.TASK_HISTORY(
                             SCHEDULED_TIME_RANGE_START => CURRENT_TIMESTAMP(),
-                            SCHEDULED_TIME_RANGE_END   => DATEADD(DAY, {future_days}, CURRENT_TIMESTAMP()),
-                            RESULT_LIMIT => 10000
+                            SCHEDULED_TIME_RANGE_END   => DATEADD(DAY, {int(future_days)}, CURRENT_TIMESTAMP()),
+                            RESULT_LIMIT => 200
                         )
                     )
                     WHERE STATE = 'SCHEDULED'
                       AND DATABASE_NAME = %s
                       AND NAME ILIKE %s
-                ),
-                ALL_TASKS AS (
-                    SELECT * FROM HISTORICAL_TASKS
-                    UNION ALL
-                    SELECT * FROM FUTURE_TASKS
-                )
+                )"""
+                    future_union = "\n                    UNION ALL\n                    SELECT * FROM FUTURE_TASKS"
+                    params.extend([monitor_db, name_pattern])
+                sql = f"""
+                    WITH RECENT_TASKS AS (
+                    SELECT
+                        NAME              AS TASK_NAME,
+                        DATABASE_NAME,
+                        SCHEMA_NAME,
+                        STATE,
+                        CASE
+                            WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'
+                            WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'
+                            WHEN UPPER(STATE) IN ('RUNNING', 'EXECUTING') THEN 'RUNNING'
+                            WHEN UPPER(STATE) = 'SCHEDULED'            THEN 'SCHEDULED'
+                            ELSE 'OTHER'
+                        END AS TASK_RESULT,
+                        SCHEDULED_TIME,
+                        QUERY_START_TIME,
+                        COMPLETED_TIME,
+                        QUERY_ID,
+                        ERROR_CODE,
+                        ERROR_MESSAGE,
+                        CASE
+                            WHEN UPPER(STATE) = 'SCHEDULED' THEN 'SCHEDULED'
+                            ELSE 'HISTORICAL'
+                        END AS RECORD_TYPE,
+                        DATEDIFF('second', QUERY_START_TIME, COMPLETED_TIME) AS DURATION_S
+                    FROM TABLE(
+                        INFORMATION_SCHEMA.TASK_HISTORY(
+                            SCHEDULED_TIME_RANGE_START => %s::TIMESTAMP_LTZ,
+                            SCHEDULED_TIME_RANGE_END   => %s::TIMESTAMP_LTZ,
+                            RESULT_LIMIT => {_TASK_HISTORY_RESULT_LIMIT}
+                        )
+                    )
+                    WHERE DATABASE_NAME = %s
+                      AND NAME ILIKE %s
+                      AND SCHEDULED_TIME >= %s::TIMESTAMP_LTZ
+                      AND SCHEDULED_TIME < DATEADD(DAY, 1, %s::DATE)
+                    ){future_cte}
+                    SELECT * FROM RECENT_TASKS{future_union}
+                    ORDER BY TASK_NAME, SCHEDULED_TIME DESC
+                """
+                params = tuple(params)
+            else:
+                future_cte = ""
+                future_union = ""
+                params = [range_from, range_to, monitor_db, name_pattern]
+                if include_future:
+                    future_cte = f""",
+                FUTURE_TASKS AS (
+                    SELECT
+                        NAME AS TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE, QUERY_ID,
+                        SCHEDULED_TIME, QUERY_START_TIME, COMPLETED_TIME,
+                        ERROR_CODE, ERROR_MESSAGE, 'SCHEDULED' AS RECORD_TYPE
+                    FROM TABLE(
+                        INFORMATION_SCHEMA.TASK_HISTORY(
+                            SCHEDULED_TIME_RANGE_START => CURRENT_TIMESTAMP(),
+                            SCHEDULED_TIME_RANGE_END   => DATEADD(DAY, {future_days}, CURRENT_TIMESTAMP()),
+                            RESULT_LIMIT => 200
+                        )
+                    )
+                    WHERE STATE = 'SCHEDULED'
+                      AND DATABASE_NAME = %s
+                      AND NAME ILIKE %s
+                      AND SCHEDULED_TIME < DATEADD(DAY, 1, %s::DATE)
+                )"""
+                    future_union = "\n                    UNION ALL\n                    SELECT * FROM FUTURE_TASKS"
+                    params.extend([monitor_db, name_pattern, range_to])
+                sql = f"""
+                WITH HISTORICAL_TASKS AS (
+                    SELECT
+                        NAME AS TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE, QUERY_ID,
+                        SCHEDULED_TIME, QUERY_START_TIME, COMPLETED_TIME,
+                        ERROR_CODE, ERROR_MESSAGE, 'HISTORICAL' AS RECORD_TYPE
+                    FROM SNOWFLAKE.ACCOUNT_USAGE.TASK_HISTORY
+                    WHERE SCHEDULED_TIME >= GREATEST(
+                            %s::TIMESTAMP_LTZ,
+                            DATEADD(MONTH, -{historical_months}, CURRENT_TIMESTAMP())
+                          )
+                      AND SCHEDULED_TIME < DATEADD(DAY, 1, %s::DATE)
+                      AND DATABASE_NAME = %s
+                      AND NAME ILIKE %s
+                ){future_cte}
                 SELECT
-                    TASK_NAME,
-                    DATABASE_NAME,
-                    SCHEMA_NAME,
-                    STATE,
+                    TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE,
                     CASE
                         WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'
                         WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'
@@ -249,26 +455,15 @@ class SnowflakeConnector:
                         WHEN UPPER(STATE) = 'SCHEDULED'            THEN 'SCHEDULED'
                         ELSE 'OTHER'
                     END AS TASK_RESULT,
-                    SCHEDULED_TIME,
-                    QUERY_START_TIME,
-                    COMPLETED_TIME,
-                    QUERY_ID,
-                    ERROR_CODE,
-                    ERROR_MESSAGE,
-                    RECORD_TYPE,
+                    SCHEDULED_TIME, QUERY_START_TIME, COMPLETED_TIME,
+                    QUERY_ID, ERROR_CODE, ERROR_MESSAGE, RECORD_TYPE,
                     DATEDIFF('second', QUERY_START_TIME, COMPLETED_TIME) AS DURATION_S
-                FROM ALL_TASKS
-                WHERE CAST(SCHEDULED_TIME AS DATE) BETWEEN %s::DATE AND %s::DATE
+                FROM (
+                    SELECT * FROM HISTORICAL_TASKS{future_union}
+                )
                 ORDER BY TASK_NAME, SCHEDULED_TIME DESC
-            """
-            params = (
-                monitor_db,
-                name_pattern,
-                monitor_db,
-                name_pattern,
-                range_from,
-                range_to,
-            )
+                """
+                params = tuple(params)
             log_sql(sql[:500], "monitoring:telemetry", "READ", allowed=True)
             cur.execute(sql, params)
             for row in cur.fetchall():

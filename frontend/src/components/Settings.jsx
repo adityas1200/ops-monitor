@@ -30,7 +30,6 @@ const TASK_FIELDS = [
 
 const DQ_FIELDS = [
   ['table_fqn', 'DQ summary table', 'Fully qualified table (DB.SCHEMA.TABLE)'],
-  ['subject_area', 'Subject area', 'Value matched against SUBJECT_AREA column'],
 ]
 
 const DEFAULT_TASKS = {
@@ -42,7 +41,6 @@ const DEFAULT_TASKS = {
 
 const DEFAULT_DQ = {
   table_fqn: 'CPH_DB_PRE_PROD.MODEL_V2.DQM_VALIDATION_SUMMARY',
-  subject_area: 'Lynkuet LAAD',
 }
 
 function resolveSfAuthMethod(authenticator) {
@@ -86,7 +84,6 @@ function resolveDq(dq) {
   const merged = mergeMonitoringDefaults(DEFAULT_DQ, dq)
   return {
     table_fqn: trimOrEmpty(merged.table_fqn) || DEFAULT_DQ.table_fqn,
-    subject_area: trimOrEmpty(merged.subject_area) || DEFAULT_DQ.subject_area,
   }
 }
 
@@ -137,10 +134,8 @@ WHERE DATABASE_NAME = '${db}'
 
 function dqPreview(dq) {
   const table = dq.table_fqn || '…'
-  const area = dq.subject_area || '…'
   return `SELECT QC_ID, CHECK_TYPE, STATUS, PASS_COUNT, FAIL_COUNT
 FROM ${table}
-WHERE SUBJECT_AREA = '${area}'
 ORDER BY RUN_DATE DESC
 LIMIT 500`
 }
@@ -504,11 +499,10 @@ export default function Settings({ onSaved, onReportError }) {
           </div>
           <div className="card config-preview-card">
             <h3>Active query preview</h3>
-            <p className="muted settings-section-desc">Rows are filtered by subject area and date range.</p>
+            <p className="muted settings-section-desc">Rows are filtered by date range.</p>
             <pre className="config-preview">{dqPreview(displayDq)}</pre>
             <dl className="config-summary">
               <div><dt>Table</dt><dd><code>{displayDq.table_fqn || '—'}</code></dd></div>
-              <div><dt>Subject area</dt><dd><code>{displayDq.subject_area || '—'}</code></dd></div>
             </dl>
           </div>
         </div>

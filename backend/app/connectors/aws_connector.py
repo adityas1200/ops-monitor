@@ -1,9 +1,15 @@
 """AWS connector — Glue, Step Functions, CloudWatch, DynamoDB."""
 from __future__ import annotations
+import time
 from typing import Any, Dict, List, Optional
 
 from app.connectors.status import normalize_run_status
 from app.core.config import aws_configured, load_settings
+
+# Glue job listing is expensive; reuse across summary calls.
+_AWS_TELEMETRY_CACHE: Dict[str, Any] = {"ts": 0.0, "records": []}
+_AWS_TELEMETRY_TTL_S = 90
+_AWS_MAX_JOBS = 40
 
 
 class AWSConnector:
@@ -60,13 +66,30 @@ class AWSConnector:
         self.last_error = None
         if not self._configured():
             return []
-        return self._live_telemetry()
+        now = time.time()
+        if (_AWS_TELEMETRY_CACHE["records"]
+                and now - _AWS_TELEMETRY_CACHE["ts"] < _AWS_TELEMETRY_TTL_S):
+            return list(_AWS_TELEMETRY_CACHE["records"])
+        records = self._live_telemetry()
+        _AWS_TELEMETRY_CACHE.update({"ts": now, "records": records})
+        return list(records)
 
     def _live_telemetry(self) -> List[Dict[str, Any]]:
         records: List[Dict[str, Any]] = []
         try:
             glue = self._client("glue")
-            for j in glue.get_jobs().get("Jobs", []):
+            jobs: List[Dict[str, Any]] = []
+            token = None
+            while len(jobs) < _AWS_MAX_JOBS:
+                kwargs: Dict[str, Any] = {"MaxResults": min(50, _AWS_MAX_JOBS - len(jobs))}
+                if token:
+                    kwargs["NextToken"] = token
+                page = glue.get_jobs(**kwargs)
+                jobs.extend(page.get("Jobs", []))
+                token = page.get("NextToken")
+                if not token:
+                    break
+            for j in jobs[:_AWS_MAX_JOBS]:
                 name = j["Name"]
                 runs = glue.get_job_runs(JobName=name, MaxResults=1).get("JobRuns", [])
                 if not runs:

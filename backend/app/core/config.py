@@ -57,6 +57,10 @@ for _proxy_var in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "").strip()
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4.5")
 USE_CLAUDE = bool(ANTHROPIC_API_KEY)
+# Prompt caching on system/skill blocks (Anthropic cache_control ephemeral)
+LLM_CACHE_CONTROL = os.getenv("LLM_CACHE_CONTROL", "true").strip().lower() in (
+    "1", "true", "yes", "on",
+)
 
 SF_OPTIONAL_FIELDS = frozenset({"database", "schema", "preprod_account", "user"})
 AWS_OPTIONAL_FIELDS = frozenset({"session_token", "region"})
@@ -208,8 +212,6 @@ def validate_monitoring_settings(monitoring: Dict[str, Any]) -> list[str]:
         errors.append("Future days must be at least 1.")
     if not dq["table_fqn"]:
         errors.append("DQ monitoring requires a fully qualified table name.")
-    if not dq["subject_area"]:
-        errors.append("DQ monitoring requires a subject area filter.")
     return errors
 
 

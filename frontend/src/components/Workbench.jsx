@@ -1,7 +1,10 @@
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../api/client'
 import TableLineageGraph from './TableLineageGraph'
 import RichRootCause from './RichRootCause'
+
+// Survive StrictMode remount so RCA is not double-fired in dev.
+const _rcaInflight = new Map()
 
 function TestSummary({ test }) {
   const [open, setOpen] = useState(null)
@@ -48,18 +51,67 @@ function TestSummary({ test }) {
   )
 }
 
+function slimRcaContext(rca) {
+  if (!rca) return null
+  return {
+    incident_id: rca.incident_id,
+    pipeline_id: rca.pipeline_id,
+    analysis_type: rca.analysis_type,
+    category: rca.category,
+    summary: rca.summary,
+    detailed_analysis: rca.detailed_analysis,
+    root_cause_node: rca.root_cause_node,
+    root_cause_name: rca.root_cause_name,
+    root_cause: rca.root_cause,
+    evidence: rca.evidence,
+    remediation: rca.remediation,
+    code_analysis: rca.code_analysis,
+    diagnostic_results: rca.diagnostic_results,
+    dq_execution_result: rca.dq_execution_result,
+  }
+}
+
 function FixDiff({ fix, onEdit, onValidate, busy }) {
   const [edit, setEdit] = useState('')
+  const groundingColor = {
+    evidence_seeded: '#2ecc71',
+    llm_polished: '#4f8cff',
+    template_fallback: '#ffb547',
+  }
+  const groundingLabel = {
+    evidence_seeded: 'Evidence-seeded',
+    llm_polished: 'LLM-polished',
+    template_fallback: 'Template fallback',
+  }
+  const facts = (fix.evidence_facts || []).slice(0, 5)
+  const hints = fix.validation_hints || []
   return (
     <div className="card">
       <h3>Identified Fix · {fix.title}</h3>
       <div className="row" style={{ marginBottom: 8 }}>
-        <span className="pill">Target: {fix.target.platform} / {fix.target.artifact}</span>
+        <span className="pill">Target: {fix.target?.platform} / {fix.target?.artifact}</span>
         <span className="pill">Risk: {fix.risk}</span>
         <span className="pill">Category: {fix.category}</span>
-        {fix.reused_from_memory && <span className="pill" style={{ color: '#7c5cff' }}>♺ reused from memory</span>}
+        {fix.grounding && (
+          <span className="pill" style={{ color: groundingColor[fix.grounding] || 'var(--muted)' }}>
+            {groundingLabel[fix.grounding] || fix.grounding}
+          </span>
+        )}
+        {fix.reused_from_memory && <span className="pill" style={{ color: '#7c5cff' }}>reused from memory</span>}
       </div>
       <p className="muted">{fix.rationale}</p>
+      {fix.evidence_summary && (
+        <div style={{ marginBottom: 10, padding: '8px 10px', background: 'var(--panel2)', borderRadius: 8, fontSize: 13 }}>
+          <strong>Evidence:</strong> <span className="muted">{fix.evidence_summary}</span>
+          {facts.length > 0 && (
+            <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+              {facts.map((f, i) => (
+                <li key={i} className="muted" style={{ fontSize: 12 }}>{typeof f === 'string' ? f : JSON.stringify(f)}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
       <div className="diff">
         <div>
           <h4 style={{ color: '#ff5c6c' }}>Before</h4>
@@ -71,8 +123,16 @@ function FixDiff({ fix, onEdit, onValidate, busy }) {
         </div>
       </div>
       <p className="muted" style={{ fontSize: 12 }}>Rollback: {fix.rollback}</p>
+      {hints.length > 0 && (
+        <div style={{ marginTop: 8, fontSize: 12 }}>
+          <strong>Validation hints:</strong>
+          <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
+            {hints.map((h, i) => <li key={i} className="muted">{h}</li>)}
+          </ul>
+        </div>
+      )}
       <div className="chat-input" style={{ padding: 0, borderTop: 'none', marginTop: 10 }}>
-        <input type="text" placeholder="Modify the fix (e.g. 'use MEDIUM warehouse', 'coalesce to 0')…"
+        <input type="text" placeholder="Modify the fix (e.g. use MEDIUM warehouse, coalesce to 0)"
           value={edit} onChange={(e) => setEdit(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && edit) { onEdit(edit); setEdit('') } }} />
         <button className="btn sec" disabled={!edit} onClick={() => { onEdit(edit); setEdit('') }}>Modify</button>
@@ -207,7 +267,6 @@ function ConfidenceSection({ confidence, confidenceLevel, drivers }) {
 
 function RcaReport({ rca, selected, busy, onSuggestFix, onAddKnowledge }) {
   const ia = rca.impact_assessment || {}
-  const rem = rca.remediation || {}
   const inc = rca.incident_summary || {}
   const sevColor = SEVERITY_COLOR[ia.business_severity] || 'var(--border)'
   const confColor = CONFIDENCE_COLOR[rca.confidence_level] || 'var(--border)'
@@ -228,7 +287,6 @@ function RcaReport({ rca, selected, busy, onSuggestFix, onAddKnowledge }) {
               {ia.business_severity}
             </span>
           )}
-          {rca.seen_before && <span className="pill" style={{ color: '#7c5cff' }}>&#9852; seen before</span>}
           <span className="pill muted" style={{ marginLeft: 'auto' }}>{rca.incident_id}</span>
         </div>
         <div className="incident-header__details">
@@ -253,20 +311,6 @@ function RcaReport({ rca, selected, busy, onSuggestFix, onAddKnowledge }) {
 
       {/* ═══ SECTION 2: ROOT CAUSE ═══════════════════════════════════════════ */}
       <div className="rca-section">
-        {rca.root_cause?.business_explanation && (
-          <div style={{ marginBottom: 10 }}>
-            <h4 className="rca-section__title">Root Cause</h4>
-            <p style={{ fontSize: 13, margin: '0 0 6px', lineHeight: 1.5 }}>
-              {rca.root_cause.business_explanation}
-            </p>
-            {rca.root_cause.technical_explanation && rca.root_cause.technical_explanation !== rca.root_cause.business_explanation && (
-              <pre style={{
-                fontSize: 12, margin: 0, padding: '8px 10px', borderRadius: 6,
-                background: 'var(--code-bg)', whiteSpace: 'pre-wrap', lineHeight: 1.5,
-              }}>{rca.root_cause.technical_explanation}</pre>
-            )}
-          </div>
-        )}
         {rca.root_cause ? (
           <RichRootCause rootCause={rca.root_cause} />
         ) : (
@@ -292,22 +336,6 @@ function RcaReport({ rca, selected, busy, onSuggestFix, onAddKnowledge }) {
         )}
       </div>
 
-      {/* ═══ SECTION 3: INVESTIGATION JOURNEY ════════════════════════════════ */}
-      {rca.investigation_journey?.length > 0 && (
-        <div className="rca-section">
-          <h4 className="rca-section__title">Investigation Journey</h4>
-          <InvestigationJourney journey={rca.investigation_journey} />
-        </div>
-      )}
-
-      {/* ═══ SECTION 4: FAILURE PROPAGATION ══════════════════════════════════ */}
-      {rca.failure_propagation?.length > 0 && (
-        <div className="rca-section">
-          <h4 className="rca-section__title">Failure Propagation</h4>
-          <FailurePropagation chain={rca.failure_propagation} />
-        </div>
-      )}
-
       {/* ═══ SECTION 5: LINEAGE & IMPACT ═════════════════════════════════════ */}
       {rca.downstream_lineage?.nodes?.length > 0 && (
         <div className="rca-section">
@@ -321,12 +349,6 @@ function RcaReport({ rca, selected, busy, onSuggestFix, onAddKnowledge }) {
         </div>
       )}
 
-      {/* ═══ SECTION 6: EVIDENCE ═════════════════════════════════════════════ */}
-      <div className="rca-section">
-        <h4 className="rca-section__title">Evidence</h4>
-        <EvidenceCards structured={rca.structured_evidence} fallback={rca.evidence} />
-      </div>
-
       {/* ═══ SECTION 7: IMPACT SUMMARY ═══════════════════════════════════════ */}
       <div className="rca-section">
         <h4 className="rca-section__title">Impact Summary</h4>
@@ -335,22 +357,6 @@ function RcaReport({ rca, selected, busy, onSuggestFix, onAddKnowledge }) {
         </p>
         <ImpactCards ia={ia} />
       </div>
-
-      {/* ═══ REMEDIATION ═══════════════════════════════════════════════════ */}
-      {(rem.immediate_fix || rem.permanent_fix || rem.monitoring_recommendation) && (
-        <div className="rca-section">
-          <h4 className="rca-section__title">Remediation</h4>
-          {rem.immediate_fix && (
-            <p style={{ fontSize: 13, margin: '0 0 6px' }}><strong>Immediate:</strong> {rem.immediate_fix}</p>
-          )}
-          {rem.permanent_fix && (
-            <p style={{ fontSize: 13, margin: '0 0 6px' }}><strong style={{ color: '#2ecc71' }}>Permanent:</strong> {rem.permanent_fix}</p>
-          )}
-          {rem.monitoring_recommendation && (
-            <p style={{ fontSize: 13, margin: 0 }}><strong style={{ color: '#3498db' }}>Monitoring:</strong> {rem.monitoring_recommendation}</p>
-          )}
-        </div>
-      )}
 
       {/* ═══ SECTION 8: AI CONFIDENCE EXPLANATION ════════════════════════════ */}
       <div className="rca-section">
@@ -442,7 +448,9 @@ function KnowledgeForm({ rca, onClose }) {
   )
 }
 
-export default function Workbench({ activePipeline, onSelect, onReportError, onBackToDashboard }) {
+export default function Workbench({
+  activePipeline, onSelect, onReportError, onBackToDashboard, dateFrom, dateTo,
+}) {
   const [selected, setSelected] = useState(activePipeline)
   const [rca, setRca] = useState(null)
   const [fix, setFix] = useState(null)
@@ -451,25 +459,77 @@ export default function Workbench({ activePipeline, onSelect, onReportError, onB
   const [hasActioned, setHasActioned] = useState(!!activePipeline)
   const [showKnowledgeForm, setShowKnowledgeForm] = useState(false)
 
-  useEffect(() => { if (activePipeline) { setSelected(activePipeline); setHasActioned(true); runRCA(activePipeline.id) } }, [activePipeline])
+  // Keep latest dates/handlers without re-binding runRCA (avoids re-running RCA on date filter changes).
+  const dateFromRef = useRef(dateFrom)
+  const dateToRef = useRef(dateTo)
+  const onReportErrorRef = useRef(onReportError)
+  const rcaTargetIdRef = useRef(null)
+  dateFromRef.current = dateFrom
+  dateToRef.current = dateTo
+  onReportErrorRef.current = onReportError
 
-  const runRCA = (id) => {
+  const runRCA = useCallback((id) => {
+    if (!id) return
+    const df = dateFromRef.current
+    const dt = dateToRef.current
+    const key = `${id}|${df || ''}|${dt || ''}`
+    rcaTargetIdRef.current = id
+    const existing = _rcaInflight.get(key)
+    if (existing) {
+      setBusy('rca')
+      existing
+        .then((r) => {
+          if (rcaTargetIdRef.current !== id) return
+          if (r?.error) throw new Error(r.error)
+          if (r) setRca(r)
+        })
+        .catch((e) => reportApiError(onReportErrorRef.current, 'run RCA', e))
+        .finally(() => { if (rcaTargetIdRef.current === id) setBusy('') })
+      return
+    }
     setBusy('rca'); setRca(null); setFix(null); setTest(null)
-    api.rca(id)
-      .then((r) => { if (r.error) throw new Error(r.error); setRca(r) })
-      .catch((e) => reportApiError(onReportError, 'run RCA', e))
-      .finally(() => setBusy(''))
-  }
+    const date_from = df ? `${df}T00:00:00+00:00` : undefined
+    const date_to = dt ? `${dt}T23:59:59+00:00` : undefined
+    const promise = api.rca(id, undefined, { date_from, date_to })
+      .then((r) => {
+        if (rcaTargetIdRef.current !== id) return r
+        if (r.error) throw new Error(r.error)
+        setRca(r)
+        return r
+      })
+      .catch((e) => {
+        if (rcaTargetIdRef.current === id) {
+          reportApiError(onReportErrorRef.current, 'run RCA', e)
+        }
+        return null
+      })
+      .finally(() => {
+        if (_rcaInflight.get(key) === promise) _rcaInflight.delete(key)
+        if (rcaTargetIdRef.current === id) setBusy('')
+      })
+    _rcaInflight.set(key, promise)
+  }, [])
+
+  // Only start RCA when the selected pipeline/check changes — NOT when Dashboard date filters change
+  // (Workbench stays mounted under display:none, so date props used to re-fire runRCA for the old id).
+  useEffect(() => {
+    if (!activePipeline?.id) return
+    setSelected(activePipeline)
+    setHasActioned(true)
+    runRCA(activePipeline.id)
+  }, [activePipeline?.id, runRCA])
   const suggestFix = () => {
     setBusy('fix')
-    api.fix(selected.id)
+    const ctx = slimRcaContext(rca)
+    api.fix(selected.id, undefined, rca?.incident_id || ctx?.incident_id, ctx)
       .then((r) => { if (r.error) throw new Error(r.error); setFix(r) })
       .catch((e) => reportApiError(onReportError, 'suggest fix', e))
       .finally(() => setBusy(''))
   }
   const editFix = (text) => {
     setBusy('fix')
-    api.fix(selected.id, text)
+    const ctx = slimRcaContext(rca)
+    api.fix(selected.id, text, rca?.incident_id || ctx?.incident_id, ctx)
       .then(setFix)
       .catch((e) => reportApiError(onReportError, 'modify fix', e))
       .finally(() => setBusy(''))

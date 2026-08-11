@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -67,6 +68,8 @@ class LineageService:
         self.settings = load_settings()
         self.sf = SnowflakeConnector()
         self._graph_cache: Optional[Dict[str, Dict[str, Any]]] = None
+        self._def_cache: Dict[Tuple[str, str, str, str], Optional[str]] = {}
+        self._io_cache: Dict[Tuple[str, str, str], Dict[str, List[str]]] = {}
 
     def load_task_graph(self) -> Dict[str, Dict[str, Any]]:
         """task_key -> {name, database, schema, upstream[], downstream[], label}."""
@@ -205,11 +208,13 @@ class LineageService:
 
     def resolve_dq_tables(self, check: Dict[str, Any]) -> List[str]:
         raw = check.get("raw") or {}
+        subject_area = check.get("table_name") or raw.get("SUBJECT_AREA")
         tables = parse_tables_from_text(
             check.get("error"),
             raw.get("QC_DESCRIPTION"),
             check.get("name"),
             check.get("column_name"),
+            subject_area,
         )
 
         dq_cfg = get_dq_monitoring_config(self.settings)
@@ -223,8 +228,14 @@ class LineageService:
         extracted = extract_table_name_from_identifier(qc_name)
         if extracted:
             bare_names.append(extracted)
+        # SUBJECT_AREA is the strongest table hint on a DQ row — treat it as a
+        # bare table candidate even if it doesn't match the ANLT_/DIM_/FACT_ prefixes.
+        subject_bare = extract_table_name_from_identifier(str(subject_area)) if subject_area else None
+        if subject_bare:
+            bare_names.append(subject_bare)
         bare_names.extend(parse_bare_tables_from_text(
-            check.get("error"), raw.get("QC_DESCRIPTION"), qc_name, check.get("column_name")
+            check.get("error"), raw.get("QC_DESCRIPTION"), qc_name,
+            check.get("column_name"), subject_area,
         ))
 
         if ctx_db and ctx_schema and bare_names:
@@ -238,7 +249,7 @@ class LineageService:
     def failed_dq_checks(self, date_from: Optional[str] = None,
                            date_to: Optional[str] = None) -> List[Dict[str, Any]]:
         checks = DQConnector().read_results(date_from, date_to)
-        failed = [c for c in checks if c.get("status") in ("FAILED", "DELAYED")]
+        failed = [c for c in checks if c.get("status") in ("FAILED", "WARNING", "DELAYED")]
         for c in failed:
             c["tables"] = self.resolve_dq_tables(c)
         return failed
@@ -385,12 +396,16 @@ class LineageService:
         Returns the SQL body as a string (up to 4000 chars), or None if unavailable.
         For tasks that CALL a procedure, returns the procedure body instead.
         """
+        cache_key = (database.upper(), schema.upper(), object_name.upper(), object_type.lower())
+        if cache_key in self._def_cache:
+            return self._def_cache[cache_key]
         if not self.sf._configured() or not database or not schema or not object_name:
             return None
         try:
             cur = self.sf._connect().cursor()
             if object_type == "view":
                 if not _IDENTIFIER_RE.match(database):
+                    self._def_cache[cache_key] = None
                     return None
                 cur.execute(
                     f"SELECT VIEW_DEFINITION FROM {database}.INFORMATION_SCHEMA.VIEWS"
@@ -398,10 +413,13 @@ class LineageService:
                     (schema, object_name),
                 )
                 row = cur.fetchone()
-                return (row[0][:4000] if row and row[0] else None)
+                result = (row[0][:4000] if row and row[0] else None)
+                self._def_cache[cache_key] = result
+                return result
 
             if object_type == "procedure":
                 if not _IDENTIFIER_RE.match(database):
+                    self._def_cache[cache_key] = None
                     return None
                 cur.execute(
                     f"SELECT PROCEDURE_DEFINITION FROM {database}.INFORMATION_SCHEMA.PROCEDURES"
@@ -409,7 +427,9 @@ class LineageService:
                     (schema, object_name),
                 )
                 row = cur.fetchone()
-                return (row[0][:4000] if row and row[0] else None)
+                result = (row[0][:4000] if row and row[0] else None)
+                self._def_cache[cache_key] = result
+                return result
 
             # Default: task — fetch DEFINITION, and if it CALLs a proc, fetch that too
             cur.execute(
@@ -425,6 +445,7 @@ class LineageService:
             row = cur.fetchone()
             task_body = (row[0] if row else "") or ""
             if not task_body:
+                self._def_cache[cache_key] = None
                 return None
 
             proc_match = _CALL_RE.search(task_body)
@@ -442,9 +463,14 @@ class LineageService:
                     )
                     proc_row = cur.fetchone()
                     if proc_row and proc_row[0]:
-                        return proc_row[0][:4000]
-            return task_body[:4000]
+                        result = proc_row[0][:4000]
+                        self._def_cache[cache_key] = result
+                        return result
+            result = task_body[:4000]
+            self._def_cache[cache_key] = result
+            return result
         except Exception:  # noqa: BLE001
+            self._def_cache[cache_key] = None
             return None
 
     # ---- Procedure-driven I/O resolution ---------------------------------
@@ -466,6 +492,12 @@ class LineageService:
           3. Parse SQL: INSERT INTO / MERGE INTO / CREATE ... AS → outputs; FROM / JOIN → inputs.
         Falls back gracefully when not connected or when task has no procedure.
         """
+        cache_key = (database.upper(), schema.upper(), task_name.upper())
+        if cache_key in self._io_cache:
+            cached = self._io_cache[cache_key]
+            if not cached["inputs"] and not cached["outputs"] and fallback_tables:
+                return {"inputs": list(fallback_tables), "outputs": []}
+            return {"inputs": list(cached["inputs"]), "outputs": list(cached["outputs"])}
         if not self.sf._configured() or not database or not schema or not task_name:
             return {"inputs": list(fallback_tables or []), "outputs": []}
         try:
@@ -505,10 +537,15 @@ class LineageService:
                 sql_body = task_body
 
             result = _classify_sql_io(sql_body, database, schema)
+            self._io_cache[cache_key] = {
+                "inputs": list(result["inputs"]),
+                "outputs": list(result["outputs"]),
+            }
             if not result["inputs"] and not result["outputs"]:
                 return {"inputs": list(fallback_tables or []), "outputs": []}
             return result
         except Exception:  # noqa: BLE001
+            self._io_cache[cache_key] = {"inputs": [], "outputs": []}
             return {"inputs": list(fallback_tables or []), "outputs": []}
 
     def fetch_upstream_procedure_chain(
@@ -596,6 +633,7 @@ class LineageService:
         root_key: str,
         graph: Dict[str, Dict[str, Any]],
         run_by_key: Dict[str, Dict[str, Any]],
+        resolve_io_keys: Optional[Set[str]] = None,
     ) -> Dict[str, Any]:
         """
         Build upstream lineage: raw source tables → upstream procedures/tasks → failed task.
@@ -651,7 +689,8 @@ class LineageService:
             db = meta.get("database") or run.get("database") or ""
             sch = meta.get("schema") or run.get("schema") or ""
             tname = meta.get("task_name") or ""
-            if db and sch and tname:
+            should_resolve = resolve_io_keys is None or tkey in resolve_io_keys
+            if db and sch and tname and should_resolve:
                 io = self.resolve_task_procedure_io(db, sch, tname, fallback)
                 input_tables = io["inputs"] if (io["inputs"] or io["outputs"]) else fallback
             else:
@@ -694,6 +733,7 @@ class LineageService:
         graph: Dict[str, Dict[str, Any]],
         run_by_key: Dict[str, Dict[str, Any]],
         downstream_map: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+        resolve_io_keys: Optional[Set[str]] = None,
     ) -> Dict[str, Any]:
         """
         Build downstream lineage: failed task → downstream procedures/tasks → final sinks.
@@ -751,7 +791,8 @@ class LineageService:
             db = meta.get("database") or run.get("database") or ""
             sch = meta.get("schema") or run.get("schema") or ""
             tname = meta.get("task_name") or ""
-            if db and sch and tname:
+            should_resolve = resolve_io_keys is None or tkey in resolve_io_keys
+            if db and sch and tname and should_resolve:
                 io = self.resolve_task_procedure_io(db, sch, tname, fallback)
                 output_tables = io["outputs"] if io["outputs"] else fallback
             else:
@@ -839,12 +880,14 @@ class LineageService:
 
     def discover_all_downstream(self, tables: List[str],
                                 context_database: str = "",
-                                context_schema: str = "") -> Dict[str, List[Dict[str, Any]]]:
+                                context_schema: str = "",
+                                max_tables: int = 3) -> Dict[str, List[Dict[str, Any]]]:
         """For each table, discover downstream views and procedures via INFORMATION_SCHEMA."""
         result: Dict[str, List[Dict[str, Any]]] = {}
         seen_fqns: Set[str] = set()
+        unique_tables = list(dict.fromkeys(tables or []))[:max(1, int(max_tables))]
 
-        for table_fqn in tables:
+        def _discover_one(table_fqn: str) -> Tuple[str, List[Dict[str, Any]]]:
             parts = table_fqn.split(".")
             if len(parts) == 3:
                 db, _schema, tbl = parts
@@ -856,19 +899,29 @@ class LineageService:
                 tbl = parts[0]
 
             if not db or not tbl:
-                continue
+                return table_fqn, []
 
             downstream: List[Dict[str, Any]] = []
             for item in self.discover_downstream_views(db, tbl):
-                if item["fqn"] not in seen_fqns:
-                    seen_fqns.add(item["fqn"])
-                    downstream.append(item)
+                downstream.append(item)
             for item in self.discover_downstream_procedures(db, tbl):
-                if item["fqn"] not in seen_fqns:
-                    seen_fqns.add(item["fqn"])
-                    downstream.append(item)
-            if downstream:
-                result[table_fqn] = downstream
+                downstream.append(item)
+            return table_fqn, downstream
+
+        if not unique_tables:
+            return result
+
+        with ThreadPoolExecutor(max_workers=min(4, len(unique_tables))) as pool:
+            futures = [pool.submit(_discover_one, t) for t in unique_tables]
+            for fut in as_completed(futures):
+                table_fqn, items = fut.result()
+                filtered: List[Dict[str, Any]] = []
+                for item in items:
+                    if item["fqn"] not in seen_fqns:
+                        seen_fqns.add(item["fqn"])
+                        filtered.append(item)
+                if filtered:
+                    result[table_fqn] = filtered
 
         return result
 

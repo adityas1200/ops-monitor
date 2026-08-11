@@ -101,3 +101,13 @@ NOTES: Seen for TASK_NON_PLD_L2, TASK_PROC_FACT_NUBEQA_VOUCHER, TASK_PROC_FACT_I
 ---
 
 
+
+---
+PATTERN: NULL L2_TGT_CNT indicates no matching count in L2 for the value 5 found in L3
+CATEGORY: Data Quality Failure
+ROOT_CAUSE: DQ check '308' fails because live evidence shows 1 offending row(s). Top finding: L3_TGT_CNT=5. Full evidence: 1 offending row(s) identified. Top findings: L3_TGT_CNT=5
+FIX: Run diagnostic query to identify the actual distinct SEG_GRP_1_RPT_VAL values in both tables: {{code:SELECT SEG_GRP_1_RPT_VAL, COUNT(*) FROM ANLT_BASE_FACT_SALES_UNALIGNED WHERE PROD_BRAND_NM='KERENDIA' GROUP BY 1}} and {{code:SELECT SEG_GRP_1_RPT_VAL, COUNT(*) FROM DIM_TARGETS_HCP WHERE PROD_BRAND_NM='KERENDIA' GROUP BY 1}}. Compare the lists to identify which segments exist in L3 but not L2 (or vice versa). If L2 is missing segments, trigger a refresh of DIM_TARGETS_HCP from the source CONFIG_KERENDIA table. If L3 has segments not defined in the configuration, investigate why the fact table is being populated with undefined segments and correct the upstream ETL logic.
+ADDED_BY: user
+ADDED_ON: 2026-07-24
+NOTES: 
+---

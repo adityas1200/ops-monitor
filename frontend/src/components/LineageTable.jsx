@@ -38,7 +38,7 @@ export default function LineageTable({ rows, affectedTables }) {
                   <td><span className="pill">{t.source}</span></td>
                   <td>{t.role?.replace(/_/g, ' ')}</td>
                   <td className="muted">{t.related_entity || '—'}</td>
-                  <td><span className={`badge ${t.status === 'FAILED' ? 'FAILED' : 'DELAYED'}`}>{t.status}</span></td>
+                  <td><span className={`badge ${t.status || 'WARNING'}`}>{t.status}</span></td>
                 </tr>
               ))}
             </tbody>

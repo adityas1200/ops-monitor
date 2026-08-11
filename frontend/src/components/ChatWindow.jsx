@@ -106,7 +106,13 @@ function agentLabel(agent) {
   return labels[agent] || agent
 }
 
-export default function ChatWindow({ activePipeline, notices = [], activityContext = {} }) {
+export default function ChatWindow({
+  activePipeline,
+  notices = [],
+  activityContext = {},
+  collapsed: _collapsed = false,
+  onToggleCollapsed,
+}) {
   const welcome = useMemo(() => buildWelcome(activityContext), [
     activityContext.tab,
     activityContext.dashboard?.view,
@@ -238,9 +244,20 @@ export default function ChatWindow({ activePipeline, notices = [], activityConte
   }, [activityContext.dashboard])
 
   return (
-    <>
+    <div className="chat-window">
       <div className="chat-head">
-        <div>💬 Agent Chat</div>
+        <div className="chat-head-row">
+          <div className="chat-title">Agent Chat</div>
+          <button
+            type="button"
+            className="chat-collapse-btn"
+            onClick={onToggleCollapsed}
+            title="Close Agent Chat"
+            aria-label="Close Agent Chat"
+          >
+            ×
+          </button>
+        </div>
         {contextHint && <div className="chat-context-hint">{contextHint}</div>}
         {activePipeline && (
           <div className="chat-context-hint">
@@ -291,6 +308,6 @@ export default function ChatWindow({ activePipeline, notices = [], activityConte
         />
         <button type="button" className="btn" disabled={busy} onClick={send}>Send</button>
       </div>
-    </>
+    </div>
   )
 }

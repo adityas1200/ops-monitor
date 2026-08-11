@@ -64,12 +64,15 @@ class Pipeline(BaseModel):
 class RCARequest(BaseModel):
     pipeline_id: str
     extra_context: Optional[str] = None        # interactive refinement hint
+    date_from: Optional[str] = None
+    date_to: Optional[str] = None
 
 
 class FixRequest(BaseModel):
     pipeline_id: str
     incident_id: Optional[str] = None
     user_edit: Optional[str] = None            # interactive fix edit
+    rca_context: Optional[Dict[str, Any]] = None  # slim RCA from Workbench (avoid re-run / context loss)
 
 
 class ValidateRequest(BaseModel):

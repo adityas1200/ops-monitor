@@ -12,7 +12,7 @@ import json
 import logging
 from typing import Any, Dict, Optional
 
-from app.core.config import SKILLS_DIR, USE_CLAUDE, CLAUDE_MODEL, ANTHROPIC_API_KEY
+from app.core.config import SKILLS_DIR, CLAUDE_MODEL, LLM_CACHE_CONTROL
 from app.memory.memory_store import AgentMemory, incident_log
 
 logger = logging.getLogger(__name__)
@@ -40,7 +40,10 @@ class ClaudeHarness:
         try:
             import anthropic
             self._client = anthropic.Anthropic(api_key=api_key)
-            logger.info("ClaudeHarness initialized with model=%s", self.model)
+            logger.info(
+                "ClaudeHarness initialized with model=%s cache_control=%s",
+                self.model, LLM_CACHE_CONTROL,
+            )
         except Exception as e:  # noqa: BLE001
             self._last_error = str(e)
             logger.error("ClaudeHarness init failed: %s", e)
@@ -68,31 +71,57 @@ class ClaudeHarness:
     def _is_auth_error(self, e: Exception) -> bool:
         return "401" in str(e) or "authentication" in str(e).lower() or "x-api-key" in str(e).lower()
 
+    @staticmethod
+    def _system_param(system: str) -> Any:
+        """System prompt; when caching is on, mark the block for Anthropic prompt cache."""
+        if not LLM_CACHE_CONTROL:
+            return system
+        return [{
+            "type": "text",
+            "text": system,
+            "cache_control": {"type": "ephemeral"},
+        }]
+
+    def _create(self, *, system: str, messages: list, max_tokens: int):
+        return self._client.messages.create(
+            model=self.model,
+            max_tokens=max_tokens,
+            system=self._system_param(system),
+            messages=messages,
+        )
+
+    def _stream(self, *, system: str, messages: list, max_tokens: int):
+        return self._client.messages.stream(
+            model=self.model,
+            max_tokens=max_tokens,
+            system=self._system_param(system),
+            messages=messages,
+        )
+
+    @staticmethod
+    def _text_from(msg) -> str:
+        return "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
+
     def reason(self, system: str, user: str, max_tokens: int = 1500) -> Optional[str]:
         """Single-turn structured reasoning (JSON extraction). Returns raw text."""
         if not self._client:
             self._init_client()
         if not self._client:
             return None
+        messages = [{"role": "user", "content": user}]
         try:
-            msg = self._client.messages.create(
-                model=self.model, max_tokens=max_tokens,
-                system=system, messages=[{"role": "user", "content": user}],
-            )
+            msg = self._create(system=system, messages=messages, max_tokens=max_tokens)
             self._last_error = None
-            return "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
+            return self._text_from(msg)
         except Exception as e:  # noqa: BLE001
             if self._is_auth_error(e):
                 logger.warning("ClaudeHarness.reason() auth error, refreshing key...")
                 self._refresh_and_retry()
                 if self._client:
                     try:
-                        msg = self._client.messages.create(
-                            model=self.model, max_tokens=max_tokens,
-                            system=system, messages=[{"role": "user", "content": user}],
-                        )
+                        msg = self._create(system=system, messages=messages, max_tokens=max_tokens)
                         self._last_error = None
-                        return "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
+                        return self._text_from(msg)
                     except Exception as e2:  # noqa: BLE001
                         self._last_error = str(e2)
                         logger.error("ClaudeHarness.reason() retry failed: %s", e2)
@@ -108,24 +137,18 @@ class ClaudeHarness:
         if not self._client:
             return None
         try:
-            msg = self._client.messages.create(
-                model=self.model, max_tokens=max_tokens,
-                system=system, messages=messages,
-            )
+            msg = self._create(system=system, messages=messages, max_tokens=max_tokens)
             self._last_error = None
-            return "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
+            return self._text_from(msg)
         except Exception as e:  # noqa: BLE001
             if self._is_auth_error(e):
                 logger.warning("ClaudeHarness.speak() auth error, refreshing key...")
                 self._refresh_and_retry()
                 if self._client:
                     try:
-                        msg = self._client.messages.create(
-                            model=self.model, max_tokens=max_tokens,
-                            system=system, messages=messages,
-                        )
+                        msg = self._create(system=system, messages=messages, max_tokens=max_tokens)
                         self._last_error = None
-                        return "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
+                        return self._text_from(msg)
                     except Exception as e2:  # noqa: BLE001
                         self._last_error = str(e2)
                         logger.error("ClaudeHarness.speak() retry failed: %s", e2)
@@ -141,10 +164,7 @@ class ClaudeHarness:
         if not self._client:
             return
         try:
-            with self._client.messages.stream(
-                model=self.model, max_tokens=max_tokens,
-                system=system, messages=messages,
-            ) as stream:
+            with self._stream(system=system, messages=messages, max_tokens=max_tokens) as stream:
                 for text in stream.text_stream:
                     self._last_error = None
                     yield text
@@ -154,10 +174,7 @@ class ClaudeHarness:
                 self._refresh_and_retry()
                 if self._client:
                     try:
-                        with self._client.messages.stream(
-                            model=self.model, max_tokens=max_tokens,
-                            system=system, messages=messages,
-                        ) as stream:
+                        with self._stream(system=system, messages=messages, max_tokens=max_tokens) as stream:
                             for text in stream.text_stream:
                                 self._last_error = None
                                 yield text

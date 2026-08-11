@@ -1,18 +1,21 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../api/client'
+import ChatFab from './ChatFab'
 import { KpiSkeleton, LoadingOverlay, TableSkeleton } from './LoadingIndicator'
 
-const KPI_DEFS = [
-  ['success', 'Passed'], ['failed', 'Failed'], ['delayed', 'Warning'],
-  ['skipped', 'Skipped'], ['total', 'Total'],
+const DQ_KPI_DEFS = [
+  ['success', 'Passed'], ['failed', 'Failed'], ['warning', 'Warning'],
+  ['skipped', 'Skipped'], ['running', 'Running'], ['total', 'Total'],
 ]
 
-const TASK_KPI_LABELS = {
-  success: 'Successful', failed: 'Failed', delayed: 'Delayed', skipped: 'Skipped', total: 'Total',
-}
+const TASK_KPI_DEFS = [
+  ['success', 'Successful'], ['failed', 'Failed'], ['delayed', 'Delayed'],
+  ['skipped', 'Skipped'], ['running', 'Running'], ['total', 'Total'],
+]
 
-function twoDaysAgoISO() {
-  const d = new Date(Date.now() - 2 * 24 * 3600 * 1000)
+/** Default lookback: past 3 days including today. */
+function defaultDateFromISO() {
+  const d = new Date(Date.now() - 3 * 24 * 3600 * 1000)
   return d.toISOString().slice(0, 10)
 }
 
@@ -21,10 +24,11 @@ const STATUS_ALIASES = {
   FAILED: ['FAILED', 'FAIL', 'TIMEOUT', 'FAILED_AND_AUTO_SUSPENDED', 'ERROR'],
   SKIPPED: ['SKIPPED', 'SKIP', 'CANCELLED'],
   RUNNING: ['RUNNING', 'EXECUTING', 'SCHEDULED', 'PENDING'],
-  DELAYED: ['DELAYED', 'WARN', 'WARNING'],
+  DELAYED: ['DELAYED'],
+  WARNING: ['WARNING', 'WARN'],
 }
 
-const STATUS_PRIORITY = { FAILED: 0, DELAYED: 1, RUNNING: 2, SKIPPED: 3, SUCCESS: 4 }
+const STATUS_PRIORITY = { FAILED: 0, WARNING: 1, DELAYED: 1, RUNNING: 2, SKIPPED: 3, SUCCESS: 4 }
 
 function getStatusPriority(s) {
   const upper = (s || '').toUpperCase()
@@ -74,13 +78,40 @@ function matchesStatus(row, filter) {
   return aliases.includes(s)
 }
 
-function KpiBar({ kpis, labels }) {
+/** Display form for run_at, e.g. "2026-07-19 23:31:46". */
+function formatRunAt(runAt) {
+  if (!runAt) return ''
+  return String(runAt).replace('T', ' ').slice(0, 19)
+}
+
+function matchesDqTextFilter(check, nameFilter) {
+  const needle = (nameFilter || '').trim().toLowerCase()
+  if (!needle) return true
+  // A purely numeric query (e.g. "1", "17") is a QC ID search. Match the QC ID exactly so
+  // "3" returns only QC 3 (not 23/31), and date-filled run-at timestamps don't pollute it.
+  if (/^\d+$/.test(needle)) {
+    return String(check.name ?? '').trim().toLowerCase() === needle
+  }
+  const haystack = [
+    check.name,
+    check.table_name,
+    check.column_name,
+    formatRunAt(check.run_at),
+    check.run_at,
+  ]
+    .filter(Boolean)
+    .map((v) => String(v).toLowerCase())
+  return haystack.some((v) => v.includes(needle))
+}
+
+function KpiBar({ kpis, defs }) {
+  const items = defs || DQ_KPI_DEFS
   return (
     <div className="kpis">
-      {KPI_DEFS.map(([k, defaultLabel]) => (
+      {items.map(([k, label]) => (
         <div key={k} className={`kpi ${k}`}>
           <div className="v">{kpis[k] ?? '—'}</div>
-          <div className="l">{labels?.[k] || defaultLabel}</div>
+          <div className="l">{label}</div>
         </div>
       ))}
     </div>
@@ -114,7 +145,7 @@ function TasksView({ data, status, nameFilter, loading, configured, onRunRCA, on
 
   return (
     <LoadingOverlay active={loading} label="Loading task monitoring data">
-      {showSkeleton ? <KpiSkeleton /> : <KpiBar kpis={data?.kpis || {}} labels={TASK_KPI_LABELS} />}
+      {showSkeleton ? <KpiSkeleton /> : <KpiBar kpis={data?.kpis || {}} defs={TASK_KPI_DEFS} />}
       {showSkeleton ? (
         <TableSkeleton rows={8} cols={6} />
       ) : (
@@ -163,17 +194,18 @@ function TasksView({ data, status, nameFilter, loading, configured, onRunRCA, on
   )
 }
 
-function DQDetailPopup({ qcId, subjectArea, cached, onLoaded, onClose }) {
-  const [details, setDetails] = useState(cached || null)
-  const [loading, setLoading] = useState(!cached)
+function DQDetailPopup({ qcId, subjectArea, onClose }) {
+  const [details, setDetails] = useState(null)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (cached) return
+    // Always re-execute the rule live so the detail panel reflects current data.
+    setLoading(true)
     api.dqDetails(qcId, subjectArea)
-      .then((d) => { setDetails(d); onLoaded?.(qcId, subjectArea, d) })
+      .then((d) => setDetails(d))
       .catch((e) => setDetails({ error: e.message }))
       .finally(() => setLoading(false))
-  }, [qcId, subjectArea, cached])
+  }, [qcId, subjectArea])
 
   const rule = details?.rule
   const sqlResults = details?.sql_results
@@ -224,7 +256,6 @@ function DQDetailPopup({ qcId, subjectArea, cached, onLoaded, onClose }) {
                 <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 6 }}>
                   SQL Results
                   {sqlResults.executed && <span className="muted" style={{ fontWeight: 400, marginLeft: 8 }}>({sqlResults.row_count} row{sqlResults.row_count !== 1 ? 's' : ''})</span>}
-                  {cached && <span className="muted" style={{ fontWeight: 400, marginLeft: 8 }}>(cached)</span>}
                 </div>
                 {!sqlResults.executed && (
                   <p style={{ color: 'var(--red)', fontSize: 12 }}>SQL execution failed: {sqlResults.error}</p>
@@ -259,22 +290,11 @@ function DQDetailPopup({ qcId, subjectArea, cached, onLoaded, onClose }) {
   )
 }
 
-const dqDetailsCache = {}
-
 function DQView({ data, status, nameFilter, loading, configured, onSelect, onRunRCA }) {
   const allChecks = data?.all_checks || []
   const [sortCol, setSortCol] = useState('status')
   const [sortDir, setSortDir] = useState('asc')
   const [detailCheck, setDetailCheck] = useState(null)
-
-  const getCached = (qcId, subjectArea) => {
-    const key = `${qcId}__${subjectArea || ''}`
-    return dqDetailsCache[key] || null
-  }
-  const onDetailLoaded = (qcId, subjectArea, result) => {
-    const key = `${qcId}__${subjectArea || ''}`
-    dqDetailsCache[key] = result
-  }
 
   const handleSort = useCallback((col) => {
     setSortCol((prev) => {
@@ -288,9 +308,8 @@ function DQView({ data, status, nameFilter, loading, configured, onSelect, onRun
   }, [])
 
   const rows = useMemo(() => {
-    const needle = (nameFilter || '').toLowerCase()
     const filtered = allChecks.filter((c) =>
-      matchesStatus(c, status) && (!needle || (c.name || '').toLowerCase().includes(needle))
+      matchesStatus(c, status) && matchesDqTextFilter(c, nameFilter)
     )
     return sortRows(filtered, sortCol, sortDir)
   }, [allChecks, status, nameFilter, sortCol, sortDir])
@@ -301,10 +320,9 @@ function DQView({ data, status, nameFilter, loading, configured, onSelect, onRun
       {data?.table && !showSkeleton && (
         <p className="muted" style={{ margin: '0 0 12px', fontSize: 12 }}>
           Source: <code>{data.table}</code>
-          {data.subject_area ? <> · Subject area: <strong>{data.subject_area}</strong></> : null}
         </p>
       )}
-      {showSkeleton ? <KpiSkeleton /> : <KpiBar kpis={data?.kpis || {}} />}
+      {showSkeleton ? <KpiSkeleton /> : <KpiBar kpis={data?.kpis || {}} defs={DQ_KPI_DEFS} />}
       {showSkeleton ? (
         <TableSkeleton rows={8} cols={6} />
       ) : (
@@ -326,14 +344,14 @@ function DQView({ data, status, nameFilter, loading, configured, onSelect, onRun
               <td>{c.table_name || '—'}</td>
               <td>{c.column_name || '—'}</td>
               <td><span className={`badge ${c.status}`}>{c.status}</span></td>
-              <td>{c.run_at ? String(c.run_at).replace('T', ' ').slice(0, 19) : '—'}</td>
+              <td>{c.run_at ? formatRunAt(c.run_at) : '—'}</td>
               <td className="muted" style={{ maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {c.error || '—'}
               </td>
               <td style={{ whiteSpace: 'nowrap' }}>
                 <button className="btn sec" style={{ marginRight: 6, padding: '5px 10px', fontSize: 11 }}
                   onClick={(e) => { e.stopPropagation(); setDetailCheck({ qcId: c.name, subjectArea: c.table_name }) }}>View Details</button>
-                {(c.status === 'FAILED' || c.status === 'DELAYED') && (
+                {(c.status === 'FAILED' || c.status === 'WARNING' || c.status === 'DELAYED') && (
                   <button className="btn" onClick={(e) => { e.stopPropagation(); onRunRCA?.(c) }}>Run RCA</button>
                 )}
               </td>
@@ -359,8 +377,6 @@ function DQView({ data, status, nameFilter, loading, configured, onSelect, onRun
         <DQDetailPopup
           qcId={detailCheck.qcId}
           subjectArea={detailCheck.subjectArea}
-          cached={getCached(detailCheck.qcId, detailCheck.subjectArea)}
-          onLoaded={onDetailLoaded}
           onClose={() => setDetailCheck(null)}
         />
       )}
@@ -368,13 +384,17 @@ function DQView({ data, status, nameFilter, loading, configured, onSelect, onRun
   )
 }
 
-export default function Dashboard({ onRunRCA, onSelect, onReportError, platforms, onChatContextChange }) {
+export default function Dashboard({
+  onRunRCA, onSelect, onReportError, platforms, onChatContextChange,
+  chatOpen = false, onOpenChat,
+}) {
   const [subTab, setSubTab] = useState('dq')
-  const [dateFrom, setDateFrom] = useState(twoDaysAgoISO())
+  const [dateFrom, setDateFrom] = useState(defaultDateFromISO())
   const [dateTo, setDateTo] = useState(new Date().toISOString().slice(0, 10))
   const [taskStatus, setTaskStatus] = useState('ALL')
   const [dqStatus, setDqStatus] = useState('ALL')
   const [nameFilter, setNameFilter] = useState('')
+  const [debouncedNameFilter, setDebouncedNameFilter] = useState('')
 
   const [taskData, setTaskData] = useState(null)
   const [dqData, setDqData] = useState(null)
@@ -382,6 +402,13 @@ export default function Dashboard({ onRunRCA, onSelect, onReportError, platforms
   const [dqLoadError, setDqLoadError] = useState(null)
   const [taskLoading, setTaskLoading] = useState(false)
   const [dqLoading, setDqLoading] = useState(false)
+  const [sfReady, setSfReady] = useState(false)
+
+  // Keep callbacks in refs so loaders stay stable (avoids re-fetch when parent recreates them).
+  const onReportErrorRef = useRef(onReportError)
+  onReportErrorRef.current = onReportError
+  const taskInflightRef = useRef(null)
+  const dqInflightRef = useRef(null)
 
   const configured = Object.values(platforms || {}).some(Boolean)
   const dateFromIso = dateFrom ? dateFrom + 'T00:00:00+00:00' : undefined
@@ -389,56 +416,105 @@ export default function Dashboard({ onRunRCA, onSelect, onReportError, platforms
   const status = subTab === 'tasks' ? taskStatus : dqStatus
   const busy = taskLoading || dqLoading
 
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedNameFilter(nameFilter), 300)
+    return () => clearTimeout(timer)
+  }, [nameFilter])
+
+  // Wait for shared Snowflake session before first summary/DQ fan-out.
+  // ensureSnowflakeSession dedupes App/Dashboard/StrictMode and uses a
+  // short-lived sessionStorage hint so remounts do not re-block on SSO.
+  useEffect(() => {
+    let cancelled = false
+    api.snowflakeWarmup()
+      .then(() => { if (!cancelled) setSfReady(true) })
+      .catch(() => { if (!cancelled) setSfReady(true) })
+    return () => { cancelled = true }
+  }, [])
+
   const loadTasks = useCallback(() => {
+    const key = `${dateFromIso || ''}|${dateToIso || ''}`
+    if (taskInflightRef.current?.key === key) {
+      return taskInflightRef.current.promise
+    }
     setTaskLoading(true)
     setTaskLoadError(null)
-    return api.summary({ status: 'ALL', date_from: dateFromIso, date_to: dateToIso })
+    const promise = api.summary({ status: 'ALL', date_from: dateFromIso, date_to: dateToIso })
       .then((d) => {
         if (!d.live_only) {
           setTaskData({ ...d, all_pipelines: [], kpis: { success: 0, failed: 0, delayed: 0, skipped: 0, running: 0, total: 0 } })
           setTaskLoadError('Stale backend — restart the server on port 8001.')
-          onReportError?.({ tab: 'Dashboard', action: 'load task data', error: 'Stale backend — restart on port 8001.' })
+          onReportErrorRef.current?.({ tab: 'Dashboard', action: 'load task data', error: 'Stale backend — restart on port 8001.' })
           return
         }
         setTaskData(d)
-        ;(d.errors || []).forEach((err) => onReportError?.({
+        ;(d.errors || []).forEach((err) => onReportErrorRef.current?.({
           tab: 'Dashboard', action: 'load task data', error: `${err.platform}: ${err.error}`,
         }))
       })
       .catch((e) => {
         setTaskLoadError(e.message || String(e))
-        onReportError?.({ tab: 'Dashboard', action: 'load task data', error: e.message })
+        onReportErrorRef.current?.({ tab: 'Dashboard', action: 'load task data', error: e.message })
       })
-      .finally(() => setTaskLoading(false))
+      .finally(() => {
+        if (taskInflightRef.current?.key === key) taskInflightRef.current = null
+        setTaskLoading(false)
+      })
+    taskInflightRef.current = { key, promise }
+    return promise
   }, [dateFromIso, dateToIso])
 
-  const loadDq = useCallback(() => {
+  const loadDq = useCallback((opts = {}) => {
+    // Default / date change / refresh: revalidate=false (backend may return cache).
+    // Pass revalidate:true only from Revalidate live.
+    const revalidate = opts.revalidate === true
+    const key = `${dateFromIso || ''}|${dateToIso || ''}|rv:${revalidate ? 1 : 0}`
+    if (dqInflightRef.current?.key === key) {
+      return dqInflightRef.current.promise
+    }
     setDqLoading(true)
     setDqLoadError(null)
-    return api.dqSummary({ date_from: dateFromIso, date_to: dateToIso })
+    const promise = api.dqSummary({ date_from: dateFromIso, date_to: dateToIso, revalidate })
       .then((d) => {
         setDqData(d)
-        ;(d.errors || []).forEach((err) => onReportError?.({
+        ;(d.errors || []).forEach((err) => onReportErrorRef.current?.({
           tab: 'Dashboard', action: 'load DQ data', error: `${err.platform}: ${err.error}`,
         }))
       })
       .catch((e) => {
         setDqLoadError(e.message || String(e))
-        onReportError?.({ tab: 'Dashboard', action: 'load DQ data', error: e.message })
+        onReportErrorRef.current?.({ tab: 'Dashboard', action: 'load DQ data', error: e.message })
       })
-      .finally(() => setDqLoading(false))
+      .finally(() => {
+        if (dqInflightRef.current?.key === key) dqInflightRef.current = null
+        setDqLoading(false)
+      })
+    dqInflightRef.current = { key, promise }
+    return promise
   }, [dateFromIso, dateToIso])
 
   const refresh = useCallback(() => {
+    taskInflightRef.current = null
+    dqInflightRef.current = null
     loadTasks()
-    loadDq()
+    loadDq({ revalidate: false })
   }, [loadTasks, loadDq])
 
-  // Initial load + reload only when dates change (not on tab or status change).
+  const revalidateDq = useCallback(() => {
+    dqInflightRef.current = null
+    loadDq({ revalidate: true })
+  }, [loadDq])
+
+  // First load + date changes: always revalidate=false. Live only via Revalidate live.
   useEffect(() => {
-    loadTasks()
-    loadDq()
-  }, [loadTasks, loadDq])
+    if (!sfReady) return undefined
+    let cancelled = false
+    ;(async () => {
+      await loadTasks()
+      if (!cancelled) await loadDq({ revalidate: false })
+    })()
+    return () => { cancelled = true }
+  }, [sfReady, loadTasks, loadDq])
 
   useEffect(() => {
     if (!onChatContextChange) return
@@ -454,7 +530,7 @@ export default function Dashboard({ onRunRCA, onSelect, onReportError, platforms
         duration_s: p.duration_s,
       }))
     const failedDqChecks = (dqData?.all_checks || [])
-      .filter((c) => c.status === 'FAILED')
+      .filter((c) => c.status === 'FAILED' || c.status === 'WARNING' || c.status === 'DELAYED')
       .slice(0, 15)
       .map((c) => ({
         id: c.id,
@@ -475,7 +551,7 @@ export default function Dashboard({ onRunRCA, onSelect, onReportError, platforms
       dqStatusFilter: dqStatus,
       failedTasks,
       failedDqChecks,
-      dqSource: dqData ? { table: dqData.table, subject_area: dqData.subject_area } : null,
+      dqSource: dqData ? { table: dqData.table } : null,
       taskLoading,
       dqLoading,
     })
@@ -504,7 +580,9 @@ export default function Dashboard({ onRunRCA, onSelect, onReportError, platforms
         <label>Search</label>
         <input
           type="text"
-          placeholder="Filter by name…"
+          placeholder={subTab === 'dq'
+            ? 'Filter by QC ID, subject area, check type, run at…'
+            : 'Filter by name…'}
           value={nameFilter}
           onChange={(e) => setNameFilter(e.target.value)}
           style={{ minWidth: 160 }}
@@ -517,7 +595,7 @@ export default function Dashboard({ onRunRCA, onSelect, onReportError, platforms
         >
           {(subTab === 'tasks'
             ? ['FAILED', 'DELAYED', 'SUCCESS', 'SKIPPED', 'RUNNING', 'ALL']
-            : ['FAILED', 'SUCCESS', 'DELAYED', 'SKIPPED', 'RUNNING', 'ALL']
+            : ['FAILED', 'WARNING', 'SUCCESS', 'SKIPPED', 'RUNNING', 'ALL']
           ).map((s) => <option key={s}>{s}</option>)}
         </select>
         <label>From</label>
@@ -527,7 +605,30 @@ export default function Dashboard({ onRunRCA, onSelect, onReportError, platforms
         <button className={`btn sec${busy ? ' is-loading' : ''}`} onClick={refresh} disabled={busy}>
           Refresh
         </button>
+        {subTab === 'dq' && (
+          <button
+            className={`btn${dqLoading ? ' is-loading' : ''}`}
+            onClick={revalidateDq}
+            disabled={busy}
+            title="Re-run failing DQ rules live and save statuses for this date range"
+          >
+            Revalidate
+          </button>
+        )}
       </div>
+      {subTab === 'dq' && dqData && (
+        <p className="muted" style={{ margin: '6px 0 0', fontSize: 12 }}>
+          {dqData.status_mode === 'live' && (
+            <>Live statuses just revalidated{dqData.cache_updated_at ? ` · saved ${new Date(dqData.cache_updated_at).toLocaleString()}` : ''} · valid 30 min</>
+          )}
+          {dqData.status_mode === 'cached_live' && (
+            <>From revalidate cache{dqData.cache_updated_at ? ` · ${new Date(dqData.cache_updated_at).toLocaleString()}` : ''} · TTL 30 min</>
+          )}
+          {dqData.status_mode === 'recorded' && (
+            <>Recorded only · use Revalidate live for current pass/fail</>
+          )}
+        </p>
+      )}
 
       <div hidden={subTab !== 'tasks'}>
         {taskLoadError && (
@@ -538,7 +639,7 @@ export default function Dashboard({ onRunRCA, onSelect, onReportError, platforms
         <TasksView
           data={taskData}
           status={taskStatus}
-          nameFilter={nameFilter}
+          nameFilter={debouncedNameFilter}
           loading={taskLoading}
           configured={configured}
           onRunRCA={onRunRCA}
@@ -552,7 +653,7 @@ export default function Dashboard({ onRunRCA, onSelect, onReportError, platforms
           </div>
         )}
         <DQView
-          nameFilter={nameFilter}
+          nameFilter={debouncedNameFilter}
           data={dqData}
           status={dqStatus}
           loading={dqLoading}
@@ -561,6 +662,8 @@ export default function Dashboard({ onRunRCA, onSelect, onReportError, platforms
           onRunRCA={onRunRCA}
         />
       </div>
+
+      {!chatOpen && onOpenChat && <ChatFab onOpen={onOpenChat} />}
     </div>
   )
 }

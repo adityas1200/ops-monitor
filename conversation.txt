@@ -1,0 +1,167 @@
+The Backtracking RCA backend is now extracting DQ evidence better, but the RCA presentation and narrative still have generic issues.
+
+Do not add logic for any specific DQ ID, table, column, dashboard, project, brand, source, or subject area.
+
+The fixes must be framework-level and work for any RCA.
+
+Problem:
+The UI/root-cause narrative still presents partial or inconclusive findings as if they are final root causes. Also, when generic templates are used, the expected/actual wording becomes vague and loses the semantic meaning of the DQ rule.
+
+Required changes:
+
+1. Surface backtracking_rca in the RCA output/UI
+
+If the RCA API response contains backtracking_rca, the Workbench/RCA view should show:
+
+- backtracking status
+- failure predicate
+- failed object
+- sample evidence
+- first breaking step, if available
+- culprit, if available
+- backtracking path
+- limitations
+- evidence queries, if safe to show
+
+If frontend changes are too large, at minimum ensure the backend response is included in the rendered RCA details.
+
+2. Separate confirmed evidence from root cause
+
+If backtracking_rca.status is COMPLETED:
+- Root Cause may use first_breaking_step and culprit as proven RCA.
+
+If backtracking_rca.status is PARTIAL, INCONCLUSIVE, or SKIPPED:
+- Do not present the upstream process, source, ETL, task, procedure, or transformation as proven root cause.
+- Present only confirmed facts as “Confirmed Finding.”
+- Present possible causes under “Hypothesis” or “Requires Further Investigation.”
+
+Example structure:
+
+Confirmed Finding:
+<evidence-backed issue>
+
+Backtracking Status:
+PARTIAL
+
+Proven So Far:
+<what evidence extraction confirmed>
+
+Not Yet Proven:
+<producer/step/source not resolved>
+
+Hypothesis:
+<possible causes, clearly labeled as hypotheses>
+
+3. Adjust confidence semantics
+
+Do not use one confidence value to imply the root cause is proven.
+
+Split or phrase confidence as:
+
+- Failure Evidence Confidence
+- Root Cause Trace Confidence
+
+If the DQ evidence is strong but backtracking is partial:
+- Evidence confidence can remain high.
+- Root cause trace confidence should be medium or low.
+
+4. Preserve semantic expected/actual wording
+
+Do not use vague generic wording such as:
+“Compared groups/keys should match or meet the check threshold.”
+
+Instead, generate expected/actual from the detected predicate and evidence.
+
+For grain violations:
+Expected should describe unique grain behavior.
+Actual should describe repeated key groups and observed counts.
+
+For count/reconciliation mismatches:
+Expected should describe matching counts or reconciled totals.
+Actual should describe observed mismatched counts and deltas.
+
+For null checks:
+Expected should describe required populated fields.
+Actual should describe null records found.
+
+For invalid values:
+Expected should describe allowed value domain.
+Actual should describe invalid values found.
+
+For data availability:
+Expected should describe required freshness or row presence.
+Actual should describe stale/missing/empty data.
+
+This must be generic and derived from predicate type, evidence columns, sample rows, and DQ metadata.
+
+5. Backtracking path must influence narrative
+
+If backtracking_path is empty but evidence was extracted, populate at least:
+- evidence extraction step
+- predicate classification step
+- producer resolution attempt
+- final limitation
+
+If producer was not resolved, the narrative must explicitly say:
+“Producer-level root cause was not proven because the table-producing object could not be resolved.”
+
+6. Do not overstate hypotheses
+
+Avoid wording like:
+“The ETL is creating the issue”
+unless backtracking proves the ETL/procedure/task/step introduced the failure.
+
+Use:
+“Possible causes include...”
+or
+“This remains a hypothesis until producer replay identifies the first breaking step.”
+
+7. Remediation must match RCA certainty
+
+If backtracking is PARTIAL, INCONCLUSIVE, or SKIPPED:
+- Recommend investigation and validation steps first.
+- Do not recommend direct corrective production DML as the immediate fix.
+- Any data modification must be marked as clone/pre-prod validation first and approval-required for production.
+
+8. Fix summary generation
+
+Summary should be evidence-specific but not overclaim root cause.
+
+Good summary pattern for partial RCA:
+“Validation failed because <confirmed evidence>. Backtracking extracted the failure evidence but did not yet resolve the producer or first breaking step.”
+
+Bad summary pattern:
+“Root cause is upstream ETL” when producer was not traced.
+
+9. Add tests
+
+Add generic tests for:
+
+A. PARTIAL backtracking does not produce final root-cause wording.
+
+B. COMPLETED backtracking uses first_breaking_step and culprit in root cause.
+
+C. Grain violation expected/actual wording uses full grain and observed counts.
+
+D. Count mismatch expected/actual wording uses compared counts and deltas.
+
+E. Null check expected/actual wording is not generic.
+
+F. Invalid value expected/actual wording is not generic.
+
+G. Backtracking limitations are displayed or included in RCA response.
+
+H. Production DML recommendations are not emitted as immediate fix when RCA is PARTIAL.
+
+I. Evidence confidence and root-cause trace confidence are separated or clearly worded.
+
+Acceptance criteria:
+- Generic implementation only.
+- No QC-specific logic.
+- No table-specific logic.
+- No column-specific logic.
+- RCA narrative distinguishes confirmed evidence from hypothesis.
+- PARTIAL/INCONCLUSIVE/SKIPPED backtracking cannot produce overconfident root cause statements.
+- Expected/actual text remains meaningful and predicate-aware.
+- Backtracking RCA details are visible or available in RCA output.
+- Existing tests continue passing.
