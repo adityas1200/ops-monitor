@@ -451,8 +451,20 @@ class RCAAgent(BaseAgent):
                         continue
                     if v is not None:
                         measure_bits.append(f"{k}={v}")
+                        # Include measure values so cite checks can ground short counts.
+                        if str(v).strip():
+                            key_values.append(str(v))
                     if len(measure_bits) >= 4:
                         break
+            # Prefer L3/L2 cardinality columns when present (QC 308-style), including NULLs.
+            for ck in ("L3_TGT_CNT", "L2_TGT_CNT", "SOURCE_CNT", "TARGET_CNT"):
+                if ck in upper:
+                    raw = upper[ck]
+                    disp = "NULL" if raw is None else raw
+                    bit = f"{ck}={disp}"
+                    if bit not in measure_bits:
+                        measure_bits.insert(0, bit)
+                    key_values.append(str(disp))
             piece = ", ".join(grain_bits + measure_bits) if (grain_bits or measure_bits) else str(upper)
             facts.append(piece)
 
@@ -641,50 +653,128 @@ class RCAAgent(BaseAgent):
         return None, "No rule SQL available for diagnostic drill-down"
 
     def _llm_cites_evidence(self, text: str, evidence: Optional[Dict[str, Any]]) -> bool:
-        """True when LLM narrative mentions at least one concrete key/value from evidence."""
+        """True when LLM narrative mentions at least one concrete key/value from evidence.
+
+        Accepts full facts (``L3_TGT_CNT=5``), column names paired with their values
+        (including single-digit counts), and grain key_values of length >= 2.
+        """
         if not text or not evidence:
             return False
-        t = text.lower()
-        for kv in evidence.get("key_values") or []:
-            if kv and str(kv).lower() in t:
-                return True
+        t = re.sub(r"\s+", " ", text.lower())
+        t_compact = t.replace(" ", "")
+
         for fact in evidence.get("evidence_facts") or []:
-            for part in str(fact).split(","):
+            f = str(fact).strip()
+            if not f:
+                continue
+            fl = f.lower()
+            if len(fl) >= 3 and fl in t:
+                return True
+            for part in fl.split(","):
+                part = part.strip()
+                if not part:
+                    continue
+                if part in t or part.replace(" ", "") in t_compact:
+                    return True
                 if "=" in part:
-                    val = part.split("=", 1)[1].strip().split()[0]
-                    if len(val) >= 2 and val.lower() in t:
+                    key, raw_val = part.split("=", 1)
+                    key = key.strip()
+                    val = raw_val.strip().split()[0] if raw_val.strip() else ""
+                    if not key:
+                        continue
+                    # Column name + value (even single-digit) must both appear.
+                    if key in t and val and val in t:
                         return True
+                    if f"{key}={val}" in t_compact:
+                        return True
+
+        for kv in evidence.get("key_values") or []:
+            s = str(kv).strip().lower()
+            # Long grain keys (CLAIM_ID, territory names) — short digits alone are weak.
+            if s and len(s) >= 2 and s in t:
+                return True
+
+        summary = str(evidence.get("evidence_summary") or "").strip().lower()
+        if summary and len(summary) >= 20 and summary[:80] in t:
+            return True
         return False
 
     def _deterministic_root_cause(self, check: Dict[str, Any],
                                   evidence: Dict[str, Any],
-                                  tables: List[str]) -> Dict[str, Any]:
+                                  tables: List[str],
+                                  dq_rule_sql: Optional[str] = None) -> Dict[str, Any]:
         """Build an evidence-grounded root cause without the LLM — used as seed/fallback."""
         facts = evidence.get("evidence_facts") or []
         summary = evidence.get("evidence_summary") or ""
         top = facts[0] if facts else summary
         n = evidence.get("row_count") or len(evidence.get("sample_rows") or [])
         label = check.get("name") or "this check"
-        explanation = (
-            f"DQ check '{label}' fails because live evidence shows {n} offending row(s). "
-            f"Top finding: {top}. "
-            f"Full evidence: {summary}"
+        facts_blob = " ".join(str(f) for f in facts).upper()
+        sql_u = (dq_rule_sql or "").upper()
+        desc = str(
+            check.get("description")
+            or check.get("qc_description")
+            or check.get("column_name")
+            or ""
         )
+
+        # Segment / layer cardinality checks (e.g. QC 308 L3_TGT_CNT vs L2_TGT_CNT).
+        is_seg_card = (
+            ("L3_TGT_CNT" in facts_blob or "L2_TGT_CNT" in facts_blob)
+            or ("L3_TGT_CNT" in sql_u and "L2_TGT_CNT" in sql_u)
+            or (
+                "SEG_GRP" in sql_u
+                and "COUNT(DISTINCT" in sql_u
+                and ("DIM_TARGETS" in sql_u or "SALES_UNALIGNED" in sql_u)
+            )
+        )
+        if is_seg_card:
+            explanation = (
+                f"DQ check '{label}' fails due to an L3/L2 segment cardinality mismatch. "
+                f"Evidence: {top}. "
+                f"The rule compares COUNT(DISTINCT SEG_GRP_…) between the L3 sales fact "
+                f"and MODEL_V2.DIM_TARGETS_HCP (L2); unequal counts (or a join on equal "
+                f"counts that finds no match) return Fail — not a SQL syntax defect."
+            )
+            expected = (
+                "L3 fact and L2 DIM_TARGETS_HCP should have the same distinct "
+                "SEG_GRP_1_RPT_VAL count for the brand under test."
+            )
+            actual = top or summary
+            business = (
+                f"Kerendia (or brand-scoped) segmentation counts diverge between "
+                f"the analytics fact and the targets dimension. Key finding: {top}."
+            )
+        else:
+            explanation = (
+                f"DQ check '{label}' fails because live evidence shows {n} offending row(s). "
+                f"Top finding: {top}. "
+                f"Full evidence: {summary}"
+            )
+            expected = "Compared groups/keys should match (or meet the check threshold)."
+            if desc and len(desc) > 20:
+                expected = desc[:240]
+            actual = top or summary
+            business = (
+                f"A data quality check failed with {n} concrete exception(s). "
+                f"Key finding: {top}."
+            )
+
         entities = [{"name": t, "type": "table"} for t in tables[:5]]
         for g in evidence.get("grain_columns") or []:
             entities.append({"name": g, "type": "column"})
+        for col in ("L3_TGT_CNT", "L2_TGT_CNT", "SEG_GRP_1_RPT_VAL"):
+            if col in facts_blob or col in sql_u:
+                entities.append({"name": col, "type": "column"})
         return {
             "explanation": explanation,
-            "business_explanation": (
-                f"A data quality check failed with {n} concrete exception(s). "
-                f"Key finding: {top}."
-            ),
+            "business_explanation": business,
             "technical_explanation": summary or explanation,
             "entities": entities,
             "code_snippets": [],
             "comparison": {
-                "expected": "Compared groups/keys should match (or meet the check threshold).",
-                "actual": top or summary,
+                "expected": expected,
+                "actual": actual,
             },
         }
 
@@ -1781,6 +1871,25 @@ class RCAAgent(BaseAgent):
                 procedure_chain = lineage.fetch_upstream_procedure_chain(
                     rt_db, rt_schema, rt_task_name, depth=3)
 
+        # When no failed task correlates, still resolve writer procedures from the
+        # failing table(s) so Fix can propose real before/after SQL (not comments).
+        if not procedure_chain and check_tables:
+            table_list = list(check_tables)
+            # Prefer fully-qualified tables from DQ rule SQL when available.
+            fqn_from_sql = parse_tables_from_text(dq_rule_sql or "")
+            resolved_tables = fqn_from_sql or table_list
+            procedure_chain = lineage.resolve_writer_procedures_for_tables(
+                resolved_tables, context_database=ctx_db, max_procs=3)
+            if procedure_chain:
+                journey.append({
+                    "step": "Writer procedure resolved",
+                    "status": "done",
+                    "detail": (
+                        f"{len(procedure_chain)} procedure(s) referencing "
+                        f"{resolved_tables[0] if resolved_tables else 'failing table'}"
+                    ),
+                })
+
         # ── Memory: recall priors for DQ checks ──────────────────────────────
         dq_signature = f"dq {category} {(check.get('error') or '')[:50]}"
         prior = self.recall(dq_signature)
@@ -1843,7 +1952,8 @@ class RCAAgent(BaseAgent):
         det_root = None
         if failure_evidence:
             det_root = self._deterministic_root_cause(
-                check, failure_evidence, list(check_tables))
+                check, failure_evidence, list(check_tables), dq_rule_sql=dq_rule_sql,
+            )
 
         chain_for_llm = [
             {"object": c["object_name"], "type": c["object_type"],
@@ -1944,16 +2054,19 @@ class RCAAgent(BaseAgent):
             }
 
         # Enforce evidence grounding: if we have concrete offenders and the LLM
-        # narrative does not cite them, replace with deterministic RC.
+        # narrative does not cite them, replace with deterministic RC — unless
+        # code_analysis already cites evidence (promote that into root_cause).
         if failure_evidence and det_root:
             ev_summary = failure_evidence.get("evidence_summary") or "Offending rows collected"
             if ev_summary not in evidence:
                 evidence.insert(0, ev_summary)
+            ca_text = str(code_analysis.get("llm_explanation") or "")
             rc_text = " ".join([
                 str((root_cause_obj or {}).get("explanation") or ""),
                 str((root_cause_obj or {}).get("technical_explanation") or ""),
                 str(summary or ""),
                 str(detailed_analysis or ""),
+                ca_text,
             ])
             if not self._llm_cites_evidence(rc_text, failure_evidence):
                 root_cause_obj = det_root
@@ -1961,6 +2074,26 @@ class RCAAgent(BaseAgent):
                 detailed_analysis = det_root.get("technical_explanation") or det_root["explanation"]
             elif root_cause_obj is None:
                 root_cause_obj = det_root
+            else:
+                # Keep LLM RC but fill thin comparison / explanation from better sources.
+                expl = str((root_cause_obj or {}).get("explanation") or "")
+                if (
+                    expl.startswith("DQ check ")
+                    and "offending row" in expl.lower()
+                    and ca_text
+                    and self._llm_cites_evidence(ca_text, failure_evidence)
+                ):
+                    root_cause_obj = dict(root_cause_obj)
+                    root_cause_obj["explanation"] = ca_text
+                    summary = ca_text[:500] if not summary else summary
+                cmp = root_cause_obj.get("comparison") if isinstance(root_cause_obj, dict) else None
+                generic_expected = (
+                    isinstance(cmp, dict)
+                    and "Compared groups/keys should match" in str(cmp.get("expected") or "")
+                )
+                if (not cmp or generic_expected) and det_root.get("comparison"):
+                    root_cause_obj = dict(root_cause_obj)
+                    root_cause_obj["comparison"] = det_root["comparison"]
             confidence = max(confidence, 0.85)
 
         confidence_lvl = _confidence_level(confidence)

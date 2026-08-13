@@ -111,3 +111,33 @@ ADDED_BY: user
 ADDED_ON: 2026-07-24
 NOTES: 
 ---
+
+---
+PATTERN: Diagnostic query sampled 15 offending rows showing CLAIM_ID duplicates at (PTNT_ID, SOURCE_TYP) grain
+CATEGORY: Data Quality Failure
+ROOT_CAUSE: 1.6M duplicate CLAIM_ID rows detected in ANLT_BASE_FACT_CLM_BRAND_MKT for Kerendia (prod_brand_cd='50419-540') LAAD claims, with 15 sampled duplicates showing (CLAIM_ID, PTNT_ID, SOURCE_TYP) combinations appearing 2-3 times each.
+FIX: 1. Truncate and reload {{table:ANLT_BASE_FACT_CLM_BRAND_MKT}} with deduplication: Add {{code:QUALIFY ROW_NUMBER() OVER (PARTITION BY CLAIM_ID, PTNT_ID, SOURCE_TYP ORDER BY SYS_LOAD_TS DESC) = 1}} to the final SELECT in {{procedure:PROC_ANLT_BASE_FACT_CLM_BRAND_MKT_ONC}} before INSERT. 2. Execute: {{code:DELETE FROM CPH_DB_PROD.ANALYTICS_V2.ANLT_BASE_FACT_CLM_BRAND_MKT WHERE (CLAIM_ID, PTNT_ID, SOURCE_TYP, SYS_LOAD_TS) NOT IN (SELECT CLAIM_ID, PTNT_ID, SOURCE_TYP, MAX(SYS_LOAD_TS) FROM CPH_DB_PROD.ANALYTICS_V2.ANLT_BASE_FACT_CLM_BRAND_MKT WHERE SYS_DATA_SOURCE like '%LAAD%' AND prod_brand_cd='50419-540' GROUP BY 1,2,3)}} to remove stale duplicates. 3. Rerun downstream aggregations to correct inflated metrics.
+ADDED_BY: user
+ADDED_ON: 2026-08-12
+NOTES: 
+---
+
+---
+PATTERN: Diagnostic sample: 15 concrete duplicate examples retrieved
+CATEGORY: Data Quality Failure
+ROOT_CAUSE: 1,609,356 duplicate CLAIM_ID records found in ANLT_BASE_FACT_CLM_BRAND_MKT for Kerendia LAAD claims, with specific examples including CLAIM_ID 10606286695306311210 (PTNT_ID 129669788) appearing 2 times and CLAIM_ID 10740259551306491498 (PTNT_ID 2853742987) appearing 3 times.
+FIX: Add DISTINCT to the SELECT statement in ANLT_FACT_CUST_MKT_SLSORG_WK_PROC before inserting into ANLT_BASE_FACT_CLM_BRAND_MKT: {{code:SELECT DISTINCT CLM_KER_2.CLAIM_ID, CLM_KER_2.PTNT_ID, CLM_KER_2.SOURCE_TYP, ...}}. Alternatively, add GROUP BY on all non-aggregated columns to collapse duplicates. Then truncate and reload ANLT_BASE_FACT_CLM_BRAND_MKT.
+ADDED_BY: user
+ADDED_ON: 2026-08-12
+NOTES: 
+---
+
+---
+PATTERN: CLAIM_ID=10606286695306311210, PTNT_ID=129669788, SOURCE_TYP=RX_CLAIMS, COUNT(*)=2
+CATEGORY: Data Quality Failure
+ROOT_CAUSE: 1,609,356 duplicate CLAIM_ID records exist in ANLT_BASE_FACT_CLM_BRAND_MKT for Kerendia LAAD claims, with individual CLAIM_IDs appearing 2-3 times per PTNT_ID.
+FIX: Add a {{code:QUALIFY ROW_NUMBER() OVER (PARTITION BY CLAIM_ID, PTNT_ID, SOURCE_TYP ORDER BY SYS_UPDATE_TS DESC) = 1}} clause to the final INSERT/MERGE statement in {{procedure:ANLT_FACT_CUST_MKT_SLSORG_WK_PROC}} to deduplicate records before loading {{table:ANLT_BASE_FACT_CLM_BRAND_MKT}}. Immediately rerun the procedure with a full historical backfill to correct the 1.6M duplicate records.
+ADDED_BY: user
+ADDED_ON: 2026-08-12
+NOTES: 
+---

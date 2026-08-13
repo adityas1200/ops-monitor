@@ -1,11 +1,11 @@
-import React, { useState } from 'react'
+import React, { useMemo, useState } from 'react'
 
 const COLORS = {
   root_cause: '#ff5c6c',
   failed:     '#ff8a3d',
   impacted:   '#ffb547',
   healthy:    '#2ecc71',
-  source:     '#4f8cff',   // raw / seed tables — blue
+  source:     '#4f8cff',
 }
 
 const COLORS_UPSTREAM = {
@@ -25,10 +25,26 @@ const COLORS_DOWNSTREAM = {
 }
 
 const NODE_SIZES = {
-  table:     { w: 170, h: 40 },
-  task:      { w: 155, h: 38 },
-  view:      { w: 170, h: 40 },
-  procedure: { w: 170, h: 40 },
+  table:     { w: 132, h: 28 },
+  task:      { w: 138, h: 34 },
+  view:      { w: 132, h: 28 },
+  procedure: { w: 132, h: 28 },
+}
+
+/** Prefer the last segment of an FQN / task name for readable chips. */
+function shortLabel(raw, max = 20) {
+  if (!raw) return ''
+  let text = String(raw).replace(/^SF Task:\s*/i, '').trim()
+  if (text.includes('.')) {
+    const parts = text.split('.').filter(Boolean)
+    text = parts[parts.length - 1] || text
+  }
+  if (text.length <= max) return text
+  return `${text.slice(0, max - 1)}…`
+}
+
+function fullLabel(n) {
+  return n.label || n.name || n.id || ''
 }
 
 function layout(nodes, edges) {
@@ -45,7 +61,7 @@ function layout(nodes, edges) {
 
   const level = {}
   const queue = nodes.filter((n) => incoming[n.id] === 0).map((n) => n.id)
-  queue.forEach((id) => (level[id] = 0))
+  queue.forEach((id) => { level[id] = 0 })
   const indeg = { ...incoming }
   const q = [...queue]
   while (q.length) {
@@ -60,56 +76,64 @@ function layout(nodes, edges) {
   const cols = {}
   nodes.forEach((n) => { (cols[level[n.id]] ||= []).push(n.id) })
   const pos = {}
-  const COLW = 210
-  const ROWH = 64
+  const COLW = 158
+  const ROWH = 40
   Object.entries(cols).forEach(([lvl, ids]) => {
     ids.forEach((id, i) => {
-      pos[id] = { x: 30 + Number(lvl) * COLW, y: 30 + i * ROWH }
+      pos[id] = { x: 16 + Number(lvl) * COLW, y: 14 + i * ROWH }
     })
   })
   const maxLevel = Math.max(0, ...Object.values(level))
   const maxCol = Math.max(0, ...Object.values(cols).map((c) => c.length))
-  const width = 60 + (maxLevel + 1) * COLW
-  const height = 60 + maxCol * ROWH
+  const width = 32 + (maxLevel + 1) * COLW
+  const height = 28 + maxCol * ROWH
   return { pos, width, height }
 }
 
-function LineageGraphSvg({ nodes, edges, colorMap }) {
+function LineageGraphSvg({ nodes, edges, colorMap, markerId }) {
   const colors = colorMap || COLORS
-  const { pos, width, height } = layout(nodes, edges)
+  const { pos, width, height } = useMemo(() => layout(nodes, edges), [nodes, edges])
+  const mid = markerId || 'tl-arrow'
 
   return (
     <svg
       className="lineage table-lineage"
-      width="100%"
-      viewBox={`0 0 ${Math.max(width, 400)} ${Math.max(height, 160)}`}
+      width={Math.max(width, 280)}
+      height={Math.max(height, 80)}
+      viewBox={`0 0 ${Math.max(width, 280)} ${Math.max(height, 80)}`}
     >
       <defs>
-        <marker id="tl-arrow" markerWidth="7" markerHeight="7" refX="6" refY="3" orient="auto">
-          <path d="M0,0 L6,3 L0,6 Z" fill="#5a6b85" />
+        <marker id={mid} markerWidth="6" markerHeight="6" refX="5" refY="2.5" orient="auto">
+          <path d="M0,0 L5,2.5 L0,5 Z" fill="#5a6b85" />
         </marker>
       </defs>
 
       {edges.map((e, i) => {
         const fromNode = nodes.find((n) => n.id === e.from)
-        const toNode   = nodes.find((n) => n.id === e.to)
+        const toNode = nodes.find((n) => n.id === e.to)
         if (!fromNode || !toNode) return null
-        const a = pos[e.from]; const b = pos[e.to]
+        const a = pos[e.from]
+        const b = pos[e.to]
         if (!a || !b) return null
         const fSize = NODE_SIZES[fromNode.type] || NODE_SIZES.table
-        const tSize = NODE_SIZES[toNode.type]   || NODE_SIZES.table
-        const x1 = a.x + fSize.w; const y1 = a.y + fSize.h / 2
-        const x2 = b.x;           const y2 = b.y + tSize.h / 2
+        const tSize = NODE_SIZES[toNode.type] || NODE_SIZES.table
+        const x1 = a.x + fSize.w
+        const y1 = a.y + fSize.h / 2
+        const x2 = b.x
+        const y2 = b.y + tSize.h / 2
         const mx = (x1 + x2) / 2
+        const dashed = fromNode.type === 'task' || toNode.type === 'task'
+          || toNode.type === 'view' || toNode.type === 'procedure'
         return (
-          <path key={i}
+          <path
+            key={i}
             d={`M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`}
-            fill="none" stroke="#5a6b85" strokeWidth="1.2"
-            markerEnd="url(#tl-arrow)"
-            strokeDasharray={
-              fromNode.type === 'task' || toNode.type === 'task' ||
-              toNode.type === 'view' || toNode.type === 'procedure' ? '4,3' : 'none'
-            }
+            fill="none"
+            stroke="#5a6b85"
+            strokeWidth="1"
+            markerEnd={`url(#${mid})`}
+            strokeDasharray={dashed ? '3,2' : 'none'}
+            opacity={0.75}
           />
         )
       })}
@@ -119,51 +143,47 @@ function LineageGraphSvg({ nodes, edges, colorMap }) {
         if (!p) return null
         const c = colors[n.state] || '#6b7689'
         const size = NODE_SIZES[n.type] || NODE_SIZES.table
-        // Use label (task-graph nodes) or name (table-graph nodes)
-        const text = n.label || n.name || n.id
-        const label = text.length > 24 ? text.slice(0, 23) + '…' : text
+        const full = fullLabel(n)
+        const label = shortLabel(full, n.type === 'task' ? 18 : 18)
+        const title = full
+        const isRoot = n.state === 'root_cause'
 
-        if (n.type === 'table') {
+        if (n.type === 'task') {
           return (
             <g key={n.id}>
-              <rect x={p.x} y={p.y} width={size.w} height={size.h} rx={size.h / 2}
+              <title>{title}</title>
+              <rect
+                x={p.x} y={p.y} width={size.w} height={size.h} rx="6"
                 fill="var(--code-bg)" stroke={c}
-                strokeWidth={n.state === 'root_cause' ? 2.5 : 1.4} />
-              <text x={p.x + 14} y={p.y + size.h / 2 + 4}
-                fill="var(--text)" fontSize="10.5" fontWeight="600">{label}</text>
+                strokeWidth={isRoot ? 2 : 1.2}
+              />
+              <text x={p.x + 8} y={p.y + 13}
+                fill="var(--text)" fontSize="10" fontWeight="600">{label}</text>
+              <text x={p.x + 8} y={p.y + 25}
+                fill={c} fontSize="8">
+                {(n.platform || 'snowflake')} · {(n.state || '').replace('_', ' ')}
+              </text>
             </g>
           )
         }
-        if (n.type === 'view') {
-          return (
-            <g key={n.id}>
-              <rect x={p.x} y={p.y} width={size.w} height={size.h} rx={size.h / 2}
-                fill="var(--code-bg)" stroke={c} strokeWidth={1.4} strokeDasharray="5,3" />
-              <text x={p.x + 14} y={p.y + size.h / 2 + 4}
-                fill="var(--text)" fontSize="10.5" fontWeight="500">{label}</text>
-            </g>
-          )
-        }
-        if (n.type === 'procedure') {
-          return (
-            <g key={n.id}>
-              <rect x={p.x} y={p.y} width={size.w} height={size.h} rx="6"
-                fill="var(--code-bg)" stroke={c} strokeWidth={1.4} strokeDasharray="2,2" />
-              <text x={p.x + 14} y={p.y + size.h / 2 + 4}
-                fill="var(--text)" fontSize="10.5" fontWeight="500">{label}</text>
-            </g>
-          )
-        }
-        // task node
+
+        const dash = n.type === 'view' ? '4,2' : n.type === 'procedure' ? '2,2' : undefined
+        const rx = n.type === 'procedure' ? 5 : size.h / 2
         return (
           <g key={n.id}>
-            <rect x={p.x} y={p.y} width={size.w} height={size.h} rx="8"
+            <title>{title}</title>
+            <rect
+              x={p.x} y={p.y} width={size.w} height={size.h} rx={rx}
               fill="var(--code-bg)" stroke={c}
-              strokeWidth={n.state === 'root_cause' ? 2.5 : 1.4} />
-            <text x={p.x + 10} y={p.y + size.h / 2 - 3}
-              fill="var(--text)" fontSize="10.5" fontWeight="600">{label}</text>
-            <text x={p.x + 10} y={p.y + size.h / 2 + 10}
-              fill={c} fontSize="9">{n.platform || 'snowflake'} · {(n.state || '').replace('_', ' ')}</text>
+              strokeWidth={isRoot ? 2 : 1.2}
+              strokeDasharray={dash}
+            />
+            <text
+              x={p.x + 10} y={p.y + size.h / 2 + 3.5}
+              fill="var(--text)" fontSize="10" fontWeight={n.type === 'table' ? 600 : 500}
+            >
+              {label}
+            </text>
           </g>
         )
       })}
@@ -172,16 +192,7 @@ function LineageGraphSvg({ nodes, edges, colorMap }) {
 }
 
 /**
- * TableLineageGraph — renders a table/task lineage graph with an optional
- * collapsible header. Used for both the legacy "Table Lineage" section and
- * the new upstream / downstream sections.
- *
- * Props:
- *   tableLineage  {nodes, edges}   — graph data
- *   title         string           — section header text (default "Table Lineage")
- *   direction     "upstream"|"downstream"|undefined — optional badge
- *   hideTitle     bool             — render SVG directly, no collapsible wrapper
- *   defaultOpen   bool             — start expanded (default true)
+ * Compact, scrollable lineage graph for upstream / downstream RCA sections.
  */
 export default function TableLineageGraph({
   tableLineage,
@@ -201,78 +212,50 @@ export default function TableLineageGraph({
 
   const { nodes, edges } = tableLineage
   const nodeCount = nodes.length
+  const markerId = `tl-arrow-${direction || colorScheme || 'default'}`
 
   const directionLabel =
     direction === 'upstream'
-      ? `${nodeCount} upstream assets`
+      ? `${nodeCount} upstream`
       : direction === 'downstream'
-      ? `${nodeCount} downstream assets`
-      : null
+      ? `${nodeCount} downstream`
+      : `${nodeCount} nodes`
 
   if (hideTitle) {
-    return <LineageGraphSvg nodes={nodes} edges={edges} colorMap={colorMap} />
+    return (
+      <div className="table-lineage-scroll">
+        <LineageGraphSvg nodes={nodes} edges={edges} colorMap={colorMap} markerId={markerId} />
+      </div>
+    )
   }
 
-  const sectionTitle = title || 'Table Lineage'
+  const sectionTitle = title
+    || (direction === 'upstream' ? 'Upstream lineage'
+      : direction === 'downstream' ? 'Downstream impact'
+      : 'Table Lineage')
 
   return (
-    <div
-      className="table-lineage-section"
-      style={{
-        border: '1px solid var(--border)',
-        borderRadius: 10,
-        marginBottom: 10,
-        overflow: 'hidden',
-      }}
-    >
-      {/* Collapsible header */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '10px 14px',
-          cursor: 'pointer',
-          background: 'var(--panel2)',
-          userSelect: 'none',
-        }}
-        onClick={() => setOpen((o) => !o)}
-      >
+    <div className="table-lineage-section">
+      <div className="table-lineage-head" onClick={() => setOpen((o) => !o)}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-            <rect x="1" y="1" width="12" height="12" rx="2"
-              stroke="var(--muted)" strokeWidth="1.4" />
-            <line x1="1" y1="4.5" x2="13" y2="4.5"
-              stroke="var(--muted)" strokeWidth="1.2" />
-            <line x1="4.5" y1="1" x2="4.5" y2="13"
-              stroke="var(--muted)" strokeWidth="1.2" />
-          </svg>
           <span style={{ fontWeight: 600, fontSize: 13 }}>{sectionTitle}</span>
-          {directionLabel && (
-            <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 4 }}>
-              {directionLabel}
-            </span>
-          )}
+          <span className="muted" style={{ fontSize: 12 }}>{directionLabel}</span>
         </div>
-        <span style={{ color: 'var(--muted)', fontSize: 13, lineHeight: 1 }}>
-          {open ? '∨' : '›'}
-        </span>
+        <span className="muted" style={{ fontSize: 13 }}>{open ? '∨' : '›'}</span>
       </div>
 
       {open && (
-        <div style={{ padding: '10px 14px 14px' }}>
-          {/* Legend */}
-          <div className="node-legend" style={{ marginBottom: 8 }}>
-            <span><span className="dot" style={{ background: COLORS.root_cause }} />Root cause</span>
+        <div className="table-lineage-body">
+          <div className="node-legend node-legend--compact">
+            <span><span className="dot" style={{ background: COLORS.root_cause }} />Root</span>
             <span><span className="dot" style={{ background: COLORS.failed }} />Failed</span>
             <span><span className="dot" style={{ background: COLORS.impacted }} />Impacted</span>
-            <span><span className="dot" style={{ background: COLORS.source }} />Source / raw</span>
-            <span><span className="dot" style={{ background: COLORS.healthy }} />Healthy</span>
-            <span style={{ marginLeft: 12, fontSize: 11, color: 'var(--muted)' }}>
-              scroll to zoom · drag to pan · double-click to reset
-            </span>
+            <span><span className="dot" style={{ background: COLORS.source }} />Source</span>
+            <span className="muted" style={{ fontSize: 11 }}>Hover a node for full name · scroll if needed</span>
           </div>
-          <LineageGraphSvg nodes={nodes} edges={edges} colorMap={colorMap} />
+          <div className="table-lineage-scroll">
+            <LineageGraphSvg nodes={nodes} edges={edges} colorMap={colorMap} markerId={markerId} />
+          </div>
         </div>
       )}
     </div>

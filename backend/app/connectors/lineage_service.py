@@ -832,6 +832,106 @@ class LineageService:
 
         return {"nodes": nodes, "edges": edges}
 
+    def resolve_writer_procedures_for_tables(
+        self,
+        tables: List[str],
+        context_database: str = "",
+        max_procs: int = 3,
+    ) -> List[Dict[str, Any]]:
+        """Find procedures that write/reference failing tables when no task correlation exists.
+
+        Searches INFORMATION_SCHEMA.PROCEDURES for definitions mentioning the bare table
+        name, fetches DDL, and prefers procedures whose outputs include the target table.
+        Returns procedure_chain-compatible entries: object_name, object_type, sql_body,
+        inputs, outputs, level.
+        """
+        if not self.sf._configured() or not tables:
+            return []
+
+        chain: List[Dict[str, Any]] = []
+        seen: Set[str] = set()
+
+        for table_fqn in list(dict.fromkeys(tables or []))[:5]:
+            parts = str(table_fqn).split(".")
+            if len(parts) == 3:
+                db, _sch, tbl = parts[0], parts[1], parts[2]
+            elif len(parts) == 2:
+                db, tbl = context_database or parts[0], parts[-1]
+            else:
+                db, tbl = context_database, parts[0]
+            if not db or not tbl or not _IDENTIFIER_RE.match(db):
+                continue
+
+            candidates = self.discover_downstream_procedures(db, tbl)
+            # Also search task graph for tasks named after the table (common ETL pattern).
+            graph = self._graph_cache or self.load_task_graph()
+            bare = tbl.upper()
+            for tkey, meta in graph.items():
+                g_name = (meta.get("task_name") or "").upper()
+                g_db = (meta.get("database") or "").upper()
+                extracted = extract_table_name_from_identifier(g_name) or ""
+                if g_db == db.upper() and extracted and (
+                    extracted == bare or bare in extracted or extracted in bare
+                ):
+                    candidates.append({
+                        "type": "task",
+                        "database": meta.get("database") or db,
+                        "schema": meta.get("schema") or "",
+                        "name": meta.get("task_name") or "",
+                        "fqn": f"{meta.get('database')}.{meta.get('schema')}.{meta.get('task_name')}",
+                    })
+
+            scored: List[Tuple[int, Dict[str, Any]]] = []
+            for item in candidates:
+                fqn = (item.get("fqn") or "").upper()
+                if not fqn or fqn in seen:
+                    continue
+                obj_type = item.get("type") or "procedure"
+                sql_body = self.fetch_object_definition(
+                    item.get("database") or db,
+                    item.get("schema") or "",
+                    item.get("name") or "",
+                    "task" if obj_type == "task" else "procedure",
+                )
+                if not sql_body:
+                    continue
+                io = _classify_sql_io(
+                    sql_body, item.get("database") or db, item.get("schema") or "",
+                )
+                outputs = [o.upper() for o in io.get("outputs") or []]
+                score = 0
+                if any(bare == o.split(".")[-1] for o in outputs):
+                    score += 10
+                if any(table_fqn.upper() == o or o.endswith(f".{bare}") for o in outputs):
+                    score += 5
+                if re.search(rf"\b(INSERT|MERGE)\b[\s\S]{{0,80}}\b{re.escape(bare)}\b", sql_body, re.I):
+                    score += 8
+                if score <= 0 and bare not in sql_body.upper():
+                    continue
+                scored.append((score, {
+                    "level": 0,
+                    "object_name": item.get("fqn") or f"{db}.{item.get('schema')}.{item.get('name')}",
+                    "object_type": "procedure" if obj_type != "task" else "task",
+                    "sql_body": sql_body[:3000],
+                    "inputs": io.get("inputs") or [],
+                    "outputs": io.get("outputs") or [],
+                }))
+
+            scored.sort(key=lambda x: x[0], reverse=True)
+            for score, entry in scored:
+                fqn = entry["object_name"].upper()
+                if fqn in seen:
+                    continue
+                # Prefer writers; allow reference-only if nothing scored as writer yet.
+                if score < 5 and any(s >= 5 for s, _ in scored):
+                    continue
+                seen.add(fqn)
+                chain.append(entry)
+                if len(chain) >= max_procs:
+                    return chain
+
+        return chain
+
     # ---- INFORMATION_SCHEMA downstream discovery --------------------------
 
     def discover_downstream_views(self, database: str, table_name: str) -> List[Dict[str, Any]]:

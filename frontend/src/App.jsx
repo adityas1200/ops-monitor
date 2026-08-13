@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react'
 import { api } from './api/client'
 import Dashboard from './components/Dashboard'
 import Workbench from './components/Workbench'
+import KnowledgeBase from './components/KnowledgeBase'
 import Settings from './components/Settings'
 import ChatWindow from './components/ChatWindow'
 import ChatFab from './components/ChatFab'
@@ -91,9 +92,11 @@ export default function App() {
           <div className="logo">Agentic Ops<br/>Monitoring <span>&amp; QC</span></div>
         </div>
         <nav className="sidebar-nav">
-          {['dashboard', 'workbench', 'settings'].map((t) => (
+          {['dashboard', 'workbench', 'knowledge', 'settings'].map((t) => (
             <button key={t} className={`nav-item ${tab === t ? 'active' : ''}`} onClick={() => setTab(t)}>
-              <span className="nav-icon">{t === 'dashboard' ? '◉' : t === 'workbench' ? '⚙' : '⚡'}</span>
+              <span className="nav-icon">
+                {t === 'dashboard' ? '◉' : t === 'workbench' ? '⚙' : t === 'knowledge' ? '📘' : '⚡'}
+              </span>
               {t[0].toUpperCase() + t.slice(1)}
             </button>
           ))}
@@ -132,8 +135,15 @@ export default function App() {
               onSelect={setActivePipeline}
               onReportError={reportActivityError}
               onBackToDashboard={() => setTab('dashboard')}
+              onOpenKnowledge={() => setTab('knowledge')}
               dateFrom={dashDates.dateFrom || dashboardContext?.dateFrom}
               dateTo={dashDates.dateTo || dashboardContext?.dateTo}
+            />
+          </div>
+          <div style={{ display: tab === 'knowledge' ? 'block' : 'none' }}>
+            <KnowledgeBase
+              active={tab === 'knowledge'}
+              onReportError={reportActivityError}
             />
           </div>
           <div style={{ display: tab === 'settings' ? 'block' : 'none' }}>

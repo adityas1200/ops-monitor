@@ -68,6 +68,9 @@ function slimRcaContext(rca) {
     code_analysis: rca.code_analysis,
     diagnostic_results: rca.diagnostic_results,
     dq_execution_result: rca.dq_execution_result,
+    // Needed so Fix can emit before/after against real procedure DDL (not invent ETL).
+    procedure_chain: rca.procedure_chain,
+    affected_tables: rca.affected_tables,
   }
 }
 
@@ -75,11 +78,13 @@ function FixDiff({ fix, onEdit, onValidate, busy }) {
   const [edit, setEdit] = useState('')
   const groundingColor = {
     evidence_seeded: '#2ecc71',
+    rca_guided: '#2ecc71',
     llm_polished: '#4f8cff',
     template_fallback: '#ffb547',
   }
   const groundingLabel = {
     evidence_seeded: 'Evidence-seeded',
+    rca_guided: 'RCA-guided',
     llm_polished: 'LLM-polished',
     template_fallback: 'Template fallback',
   }
@@ -265,7 +270,7 @@ function ConfidenceSection({ confidence, confidenceLevel, drivers }) {
   )
 }
 
-function RcaReport({ rca, selected, busy, onSuggestFix, onAddKnowledge }) {
+function RcaReport({ rca, selected, busy, onSuggestFix, onAddKnowledge, onOpenKnowledge }) {
   const ia = rca.impact_assessment || {}
   const inc = rca.incident_summary || {}
   const sevColor = SEVERITY_COLOR[ia.business_severity] || 'var(--border)'
@@ -327,7 +332,7 @@ function RcaReport({ rca, selected, busy, onSuggestFix, onAddKnowledge }) {
           <div style={{ marginTop: 12 }}>
             <TableLineageGraph
               tableLineage={rca.upstream_lineage}
-              title="Lineage"
+              title="Upstream lineage"
               direction="upstream"
               defaultOpen={false}
               colorScheme="upstream"
@@ -341,9 +346,9 @@ function RcaReport({ rca, selected, busy, onSuggestFix, onAddKnowledge }) {
         <div className="rca-section">
           <TableLineageGraph
             tableLineage={rca.downstream_lineage}
-            title="Lineage"
+            title="Downstream impact"
             direction="downstream"
-            defaultOpen
+            defaultOpen={false}
             colorScheme="downstream"
           />
         </div>
@@ -378,6 +383,9 @@ function RcaReport({ rca, selected, busy, onSuggestFix, onAddKnowledge }) {
           <button className="btn sec" onClick={() => onAddKnowledge?.(rca)}>
             + Add to Knowledge Base
           </button>
+          <button className="btn sec" onClick={() => onOpenKnowledge?.()}>
+            View Knowledge Base
+          </button>
         </div>
       </div>
 
@@ -398,7 +406,7 @@ function RcaReport({ rca, selected, busy, onSuggestFix, onAddKnowledge }) {
   )
 }
 
-function KnowledgeForm({ rca, onClose }) {
+function KnowledgeForm({ rca, onClose, onSaved }) {
   const [pattern, setPattern] = useState((rca?.evidence?.[2] || rca?.summary || '').slice(0, 200))
   const [category, setCategory] = useState(rca?.category || 'Unknown Failure')
   const [rootCause, setRootCause] = useState(rca?.summary || '')
@@ -409,7 +417,13 @@ function KnowledgeForm({ rca, onClose }) {
   const submit = () => {
     setSaving(true)
     api.addRcaKnowledge({ pattern, category, root_cause: rootCause, fix, added_by: 'user' })
-      .then(() => { setSaved(true); setTimeout(onClose, 1500) })
+      .then(() => {
+        setSaved(true)
+        setTimeout(() => {
+          onClose()
+          onSaved?.()
+        }, 800)
+      })
       .catch(() => setSaving(false))
   }
 
@@ -449,7 +463,7 @@ function KnowledgeForm({ rca, onClose }) {
 }
 
 export default function Workbench({
-  activePipeline, onSelect, onReportError, onBackToDashboard, dateFrom, dateTo,
+  activePipeline, onSelect, onReportError, onBackToDashboard, onOpenKnowledge, dateFrom, dateTo,
 }) {
   const [selected, setSelected] = useState(activePipeline)
   const [rca, setRca] = useState(null)
@@ -569,11 +583,16 @@ export default function Workbench({
           busy={busy}
           onSuggestFix={suggestFix}
           onAddKnowledge={() => setShowKnowledgeForm(true)}
+          onOpenKnowledge={onOpenKnowledge}
         />
       )}
 
       {showKnowledgeForm && rca && (
-        <KnowledgeForm rca={rca} onClose={() => setShowKnowledgeForm(false)} />
+        <KnowledgeForm
+          rca={rca}
+          onClose={() => setShowKnowledgeForm(false)}
+          onSaved={onOpenKnowledge}
+        />
       )}
 
       {busy === 'fix' && <div className="card spinner">Fix agent working…</div>}
