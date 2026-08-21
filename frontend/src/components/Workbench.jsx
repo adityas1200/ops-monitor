@@ -464,6 +464,7 @@ function KnowledgeForm({ rca, onClose, onSaved }) {
 
 export default function Workbench({
   activePipeline, onSelect, onReportError, onBackToDashboard, onOpenKnowledge, dateFrom, dateTo,
+  onRcaChange, externalRca,
 }) {
   const [selected, setSelected] = useState(activePipeline)
   const [rca, setRca] = useState(null)
@@ -477,10 +478,13 @@ export default function Workbench({
   const dateFromRef = useRef(dateFrom)
   const dateToRef = useRef(dateTo)
   const onReportErrorRef = useRef(onReportError)
+  const onRcaChangeRef = useRef(onRcaChange)
   const rcaTargetIdRef = useRef(null)
+  const rcaEpochRef = useRef(0)
   dateFromRef.current = dateFrom
   dateToRef.current = dateTo
   onReportErrorRef.current = onReportError
+  onRcaChangeRef.current = onRcaChange
 
   const runRCA = useCallback((id) => {
     if (!id) return
@@ -488,38 +492,44 @@ export default function Workbench({
     const dt = dateToRef.current
     const key = `${id}|${df || ''}|${dt || ''}`
     rcaTargetIdRef.current = id
+    const epoch = ++rcaEpochRef.current
     const existing = _rcaInflight.get(key)
     if (existing) {
       setBusy('rca')
       existing
         .then((r) => {
-          if (rcaTargetIdRef.current !== id) return
+          if (epoch !== rcaEpochRef.current || rcaTargetIdRef.current !== id) return
           if (r?.error) throw new Error(r.error)
-          if (r) setRca(r)
+          if (r) {
+            setRca(r)
+            onRcaChangeRef.current?.(r)
+          }
         })
         .catch((e) => reportApiError(onReportErrorRef.current, 'run RCA', e))
-        .finally(() => { if (rcaTargetIdRef.current === id) setBusy('') })
+        .finally(() => { if (rcaTargetIdRef.current === id && epoch === rcaEpochRef.current) setBusy('') })
       return
     }
     setBusy('rca'); setRca(null); setFix(null); setTest(null)
+    onRcaChangeRef.current?.(null)
     const date_from = df ? `${df}T00:00:00+00:00` : undefined
     const date_to = dt ? `${dt}T23:59:59+00:00` : undefined
     const promise = api.rca(id, undefined, { date_from, date_to })
       .then((r) => {
-        if (rcaTargetIdRef.current !== id) return r
+        if (epoch !== rcaEpochRef.current || rcaTargetIdRef.current !== id) return r
         if (r.error) throw new Error(r.error)
         setRca(r)
+        onRcaChangeRef.current?.(r)
         return r
       })
       .catch((e) => {
-        if (rcaTargetIdRef.current === id) {
+        if (rcaTargetIdRef.current === id && epoch === rcaEpochRef.current) {
           reportApiError(onReportErrorRef.current, 'run RCA', e)
         }
         return null
       })
       .finally(() => {
         if (_rcaInflight.get(key) === promise) _rcaInflight.delete(key)
-        if (rcaTargetIdRef.current === id) setBusy('')
+        if (rcaTargetIdRef.current === id && epoch === rcaEpochRef.current) setBusy('')
       })
     _rcaInflight.set(key, promise)
   }, [])
@@ -532,6 +542,20 @@ export default function Workbench({
     setHasActioned(true)
     runRCA(activePipeline.id)
   }, [activePipeline?.id, runRCA])
+
+  useEffect(() => {
+    if (!externalRca?.rca || externalRca.rca.error) return
+    const pid = externalRca.pipelineId
+    if (pid && activePipeline?.id && pid !== activePipeline.id) return
+    rcaEpochRef.current += 1
+    rcaTargetIdRef.current = activePipeline?.id || pid || rcaTargetIdRef.current
+    setRca(externalRca.rca)
+    setFix(null)
+    setTest(null)
+    setHasActioned(true)
+    setBusy('')
+    onRcaChangeRef.current?.(externalRca.rca)
+  }, [externalRca?.seq])
   const suggestFix = () => {
     setBusy('fix')
     const ctx = slimRcaContext(rca)

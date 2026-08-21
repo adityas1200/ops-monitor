@@ -41,6 +41,7 @@ function getQuickActions(context, activePipeline) {
   if (tab === 'workbench' || (hasSelection && !isDqRow)) {
     return [
       { label: 'Run RCA', text: 'Run RCA on the selected pipeline' },
+      { label: 'Correct RCA', text: 'This RCA is not correct, find the exact root cause' },
       { label: 'Resolution plan', text: 'Give me a resolution plan with RCA and suggested fix' },
       { label: 'Suggest fix', text: 'Suggest a fix for the selected failure' },
       { label: 'Validate fix', text: 'Validate the fix on zero-copy clone' },
@@ -71,6 +72,7 @@ function getQuickActions(context, activePipeline) {
     if (hasSelection && !isDqRow) {
       actions.push(
         { label: 'Run RCA', text: 'Run RCA on the selected task' },
+        { label: 'Correct RCA', text: 'This RCA is not correct, find the exact root cause' },
         { label: 'Resolution plan', text: 'Give me a resolution plan for the selected task' },
       )
     }
@@ -106,12 +108,22 @@ function agentLabel(agent) {
   return labels[agent] || agent
 }
 
+function isRcaPayload(payload) {
+  return Boolean(
+    payload
+    && !payload.error
+    && payload.summary
+    && (payload.root_cause_name || payload.analysis_type),
+  )
+}
+
 export default function ChatWindow({
   activePipeline,
   notices = [],
   activityContext = {},
   collapsed: _collapsed = false,
   onToggleCollapsed,
+  onRcaFromChat,
 }) {
   const welcome = useMemo(() => buildWelcome(activityContext), [
     activityContext.tab,
@@ -202,6 +214,7 @@ export default function ChatWindow({
           }
           return null
         })
+        if (isRcaPayload(payload)) onRcaFromChat?.(payload)
         setBusy(false)
       },
       onError: (err) => {
@@ -210,6 +223,7 @@ export default function ChatWindow({
         api.chat(text, activePipeline?.id, { ...activityContext, session_id: sessionId })
           .then((r) => {
             setMsgs((m) => [...m, { role: 'bot', agent: r.agent, text: r.reply }])
+            if (isRcaPayload(r.payload)) onRcaFromChat?.(r.payload)
           })
           .catch((e) => {
             setMsgs((m) => [...m, { role: 'bot', agent: 'error', text: 'Error: ' + e.message }])
@@ -301,7 +315,7 @@ export default function ChatWindow({
       <div className="chat-input">
         <input
           type="text"
-          placeholder="Ask about failed tasks, DQ checks, RCA, fixes…"
+          placeholder="Ask about failed tasks, DQ checks, RCA, or correct a root cause…"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && send()}

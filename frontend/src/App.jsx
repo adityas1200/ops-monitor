@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from './api/client'
 import Dashboard from './components/Dashboard'
 import Workbench from './components/Workbench'
@@ -6,6 +6,21 @@ import KnowledgeBase from './components/KnowledgeBase'
 import Settings from './components/Settings'
 import ChatWindow from './components/ChatWindow'
 import ChatFab from './components/ChatFab'
+
+function slimRcaForChat(rca) {
+  if (!rca || rca.error) return null
+  return {
+    pipeline_id: rca.pipeline_id,
+    analysis_type: rca.analysis_type,
+    category: rca.category,
+    summary: rca.summary,
+    detailed_analysis: (rca.detailed_analysis || '').slice(0, 800),
+    root_cause_node: rca.root_cause_node,
+    root_cause_name: rca.root_cause_name,
+    confidence: rca.confidence,
+    affected_tables: (rca.affected_tables || []).slice(0, 8),
+  }
+}
 
 export default function App() {
   const [tab, setTab] = useState('dashboard')
@@ -16,6 +31,9 @@ export default function App() {
   const [dashboardContext, setDashboardContext] = useState(null)
   const [dashDates, setDashDates] = useState({ dateFrom: null, dateTo: null })
   const [theme, setTheme] = useState(() => localStorage.getItem('ops-monitor-theme') || 'light')
+  const [rcaReport, setRcaReport] = useState(null)
+  const [chatRca, setChatRca] = useState(null)
+  const reportedActivityIdsRef = useRef(new Set())
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
@@ -27,22 +45,35 @@ export default function App() {
   const closeChat = useCallback(() => setChatOpen(false), [])
 
   const reportActivityError = useCallback(async (payload) => {
+    const action = payload.action || 'unknown action'
+    const error = payload.error || 'Unknown error'
+    const noticeTab = payload.tab || tab
+    const id = `activity:${noticeTab}:${action}:${error}`
+    if (reportedActivityIdsRef.current.has(id)) {
+      setChatOpen(true)
+      return
+    }
+    reportedActivityIdsRef.current.add(id)
+
     const ctx = { tab, platforms, ...payload.details }
     try {
       const r = await api.reportActivityError({
-        tab: payload.tab || tab,
-        action: payload.action || 'unknown action',
-        error: payload.error || 'Unknown error',
+        tab: noticeTab,
+        action,
+        error,
         details: ctx,
       })
-      const id = `activity:${payload.tab}:${payload.action}:${payload.error}`
-      setChatNotices((prev) => [...prev, { id, agent: 'chat', text: r.reply }])
+      setChatNotices((prev) => {
+        if (prev.some((n) => n.id === id)) return prev
+        return [...prev, { id, agent: 'chat', text: r.reply }]
+      })
       setChatOpen(true)
     } catch (e) {
+      reportedActivityIdsRef.current.delete(id)
       setChatNotices((prev) => [...prev, {
         id: `activity-fb:${Date.now()}`,
         agent: 'chat',
-        text: `Something went wrong during ${payload.action}: ${payload.error || e.message}`,
+        text: `Something went wrong during ${action}: ${error || e.message}`,
       }])
       setChatOpen(true)
     }
@@ -65,6 +96,17 @@ export default function App() {
   const tabLabel = tab.charAt(0).toUpperCase() + tab.slice(1)
   const configured = Object.entries(platforms).filter(([, v]) => v).map(([k]) => k)
 
+  const applyChatRca = useCallback((payload) => {
+    if (!payload || payload.error) return
+    if (!payload.summary || !(payload.root_cause_name || payload.analysis_type)) return
+    setRcaReport(payload)
+    setChatRca({
+      pipelineId: payload.pipeline_id,
+      rca: payload,
+      seq: Date.now(),
+    })
+  }, [])
+
   const chatContext = {
     tab: tabLabel,
     platforms,
@@ -76,6 +118,7 @@ export default function App() {
       platform: activePipeline.platform,
       error: activePipeline.error,
     } : null,
+    rca: slimRcaForChat(rcaReport),
   }
 
   const onChatContextChange = useCallback((ctx) => {
@@ -138,6 +181,8 @@ export default function App() {
               onOpenKnowledge={() => setTab('knowledge')}
               dateFrom={dashDates.dateFrom || dashboardContext?.dateFrom}
               dateTo={dashDates.dateTo || dashboardContext?.dateTo}
+              onRcaChange={setRcaReport}
+              externalRca={chatRca}
             />
           </div>
           <div style={{ display: tab === 'knowledge' ? 'block' : 'none' }}>
@@ -160,6 +205,7 @@ export default function App() {
             notices={chatNotices}
             activityContext={chatContext}
             onToggleCollapsed={closeChat}
+            onRcaFromChat={applyChatRca}
           />
         </div>
 

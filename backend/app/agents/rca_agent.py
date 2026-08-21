@@ -78,6 +78,33 @@ def _classify(error: Optional[str]) -> str:
     return CATEGORY_UNKNOWN
 
 
+_OPERATOR_REJECT_KEYS = (
+    "not correct", "incorrect", "not right", "wrong", "look deeper",
+    "go deeper", "dig deeper", "exact root", "rejected", "do not repeat",
+    "don't repeat", "do NOT repeat",
+)
+
+
+def _operator_hint_text(hint: Optional[str]) -> str:
+    """Use only the operator's own words for node matching, not the prior-RCA dump."""
+    if not hint:
+        return ""
+    first = hint.strip().split("\n", 1)[0]
+    if first.lower().startswith("operator guidance:"):
+        return first.split(":", 1)[-1].strip()
+    return first
+
+
+def _operator_sql_instruction(extra_context: Optional[str], base: str) -> str:
+    if not extra_context:
+        return base
+    return (
+        f"{base} OPERATOR FEEDBACK (highest priority): {extra_context[:1500]} "
+        "Do not repeat a previously rejected root cause. Find the exact underlying "
+        "cause with specific table, column, and SQL evidence."
+    )
+
+
 def _confidence_level(score: float) -> str:
     """Map decimal confidence to the skill's High / Medium / Low labels."""
     if score >= 0.85:
@@ -1260,6 +1287,8 @@ class RCAAgent(BaseAgent):
         refinement = None
         if extra_context:
             refinement = self._refine(target, root, category, extra_context, idx, run_by_key)
+            journey.append({"step": "Operator guidance applied", "status": "done",
+                            "detail": _operator_hint_text(extra_context)[:240] or extra_context[:240]})
             if refinement:
                 summary += f" Refinement: {refinement['note']}"
                 confidence = min(0.97, confidence + 0.05)
@@ -1338,12 +1367,12 @@ class RCAAgent(BaseAgent):
             "procedure_io": procedure_io,
             "upstream_procedure_chain": chain_for_llm,
             "dq_execution_results": dq_exec_for_llm,
-            "sql_analysis_request": (
+            "sql_analysis_request": _operator_sql_instruction(extra_context, (
                 "CRITICAL: Analyze the SQL/procedure chain and identify the SPECIFIC root cause. "
                 "Reference exact table names, column names, and SQL conditions. "
                 "If procedure chain is provided, trace the data flow and identify where the logic breaks. "
                 "Provide root_cause as a structured object with explanation, entities, and code_snippets."
-            ),
+            )),
             "prior_rca_cases": [
                 {"error_pattern": p.get("error_pattern"), "category": p.get("category"),
                  "resolution": p.get("resolution_applied"), "analysis": p.get("code_analysis_summary")}
@@ -1351,6 +1380,7 @@ class RCAAgent(BaseAgent):
             ],
             "domain_knowledge": knowledge_rules[:3],
             "extra_context": extra_context,
+            "operator_feedback": extra_context,
         }, max_tokens=4000)
 
         # ── Build code_analysis ──────────────────────────────────────────────
@@ -1719,7 +1749,9 @@ class RCAAgent(BaseAgent):
         )
 
         if extra_context:
-            summary += f" Note: {extra_context}"
+            summary += f" Note: {extra_context.split(chr(10), 1)[0][:240]}"
+            journey.append({"step": "Operator guidance applied", "status": "done",
+                            "detail": _operator_hint_text(extra_context)[:240] or extra_context[:240]})
 
         confidence = 0.78 if check_tables else 0.55
 
@@ -1858,7 +1890,7 @@ class RCAAgent(BaseAgent):
             )
 
         if extra_context and live_status:
-            summary += f" Note: {extra_context}"
+            summary += f" Note: {_operator_hint_text(extra_context)[:240] or extra_context[:240]}"
 
         # ── Fetch upstream procedure chain (2-3 levels) ──────────────────────
         procedure_chain: List[Dict[str, Any]] = []
@@ -1993,7 +2025,7 @@ class RCAAgent(BaseAgent):
                 for p in all_priors[:3]
             ],
             "domain_knowledge": knowledge_rules[:3],
-            "sql_analysis_request": (
+            "sql_analysis_request": _operator_sql_instruction(extra_context, (
                 "Trust the LIVE execution above all else (Evidence Hierarchy Rank 1). "
                 "If live_status is SUCCESS / dq_currently_passing is true, the check PASSES now: "
                 "report the recorded failure as STALE/RESOLVED, keep confidence <= 0.60, and do "
@@ -2007,8 +2039,9 @@ class RCAAgent(BaseAgent):
                 "Forbidden vague phrases: 'data mismatch', 'semantic issue', 'populations do not "
                 "align', 'one brand has a discrepancy', 'without diagnostic', 'could result from'. "
                 "Provide root_cause as a structured object."
-            ),
+            )),
             "extra_context": extra_context,
+            "operator_feedback": extra_context,
         }, max_tokens=4000)
 
         code_analysis: Dict[str, Any] = {
@@ -2256,14 +2289,38 @@ class RCAAgent(BaseAgent):
         return result
 
     def _refine(self, target, root, category, hint: str, idx, run_by_key) -> Optional[Dict[str, Any]]:
-        h = hint.lower()
-        for nid, n in {**idx, **{k: v for k, v in run_by_key.items()}}.items():
+        h = _operator_hint_text(hint).lower() or (hint or "").lower()
+        nodes = {**idx, **{k: v for k, v in run_by_key.items()}}
+        prev_key = root.get("task_key") or root.get("id")
+
+        for nid, n in nodes.items():
             short = (n.get("task_key") or nid).split(".")[-1].lower()
             name_part = n.get("name", "").lower().split(":")[-1].strip()
-            if (short and short in h) or (name_part and name_part in h):
+            if (short and len(short) > 2 and short in h) or (name_part and len(name_part) > 2 and name_part in h):
                 key = n.get("task_key") or nid
-                if n.get("status") in ("FAILED", "DELAYED") and key != root.get("task_key", root.get("id")):
+                if n.get("status") in ("FAILED", "DELAYED") and key != prev_key:
                     return {"note": f"user hint pointed to '{n['name']}' — re-evaluated as candidate root",
-                            "new_root": key}
-        return {"note": f"incorporated user context: '{hint}' (no root change; confidence raised)",
+                            "new_root": key, "rejected_root": prev_key}
+
+        for nid, n in nodes.items():
+            for t in n.get("tables") or []:
+                tname = (t.get("table") if isinstance(t, dict) else str(t)).lower()
+                short = tname.split(".")[-1]
+                if short and len(short) > 3 and short in h:
+                    key = n.get("task_key") or nid
+                    if n.get("status") in ("FAILED", "DELAYED") and key != prev_key:
+                        return {"note": f"user hint pointed to table '{short}' on '{n.get('name')}' — re-evaluated as candidate root",
+                                "new_root": key, "rejected_root": prev_key}
+
+        if any(k in h for k in _OPERATOR_REJECT_KEYS):
+            return {
+                "note": (
+                    f"operator rejected previous root '{root.get('name')}' — "
+                    "keeping the node but requiring a more specific exact cause from SQL/evidence"
+                ),
+                "new_root": None,
+                "rejected_root": prev_key,
+            }
+        clipped = _operator_hint_text(hint) or hint
+        return {"note": f"incorporated user context: '{clipped[:180]}' (no root change; confidence raised)",
                 "new_root": None}

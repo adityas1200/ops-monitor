@@ -11,6 +11,86 @@ from app.core.config import (get_dq_monitoring_config, get_task_monitoring_confi
                              load_settings, platforms_configured)
 from app.memory.memory_store import incident_log
 
+# Phrases that mean the operator is rejecting / steering a prior RCA (HITL).
+_RCA_CORRECTION_KEYS = (
+    "not correct", "incorrect", "not right", "that's wrong", "thats wrong",
+    "this is wrong", "it's wrong", "its wrong", "wrong root", "wrong rca",
+    "wrong cause", "look deeper", "go deeper", "dig deeper", "exact root",
+    "exact cause", "find the exact", "missed the root", "not the root",
+    "re-run rca", "rerun rca", "reanalyze", "re-analyze", "actual root",
+    "real root", "true root", "different root", "another root",
+)
+
+_BARE_RCA_REQUESTS = {
+    "rca",
+    "run rca",
+    "run rca on the selected pipeline",
+    "run rca on the selected task",
+    "run rca on the selected failure",
+}
+
+
+def _is_rca_correction(msg: str) -> bool:
+    m = msg.lower()
+    return any(k in m for k in _RCA_CORRECTION_KEYS)
+
+
+def _is_bare_rca_request(msg: str) -> bool:
+    return msg.lower().strip() in _BARE_RCA_REQUESTS
+
+
+def _slim_prior_rca(rca: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if not rca or rca.get("error"):
+        return None
+    tables = []
+    for t in (rca.get("affected_tables") or [])[:8]:
+        if isinstance(t, dict):
+            tables.append(t.get("table") or t.get("name"))
+        else:
+            tables.append(str(t))
+    return {
+        "pipeline_id": rca.get("pipeline_id"),
+        "root_cause_name": rca.get("root_cause_name"),
+        "root_cause_node": rca.get("root_cause_node"),
+        "category": rca.get("category"),
+        "summary": (rca.get("summary") or "")[:500],
+        "detailed_analysis": (rca.get("detailed_analysis") or "")[:800],
+        "confidence": rca.get("confidence"),
+        "affected_tables": [t for t in tables if t],
+    }
+
+
+def _build_rca_extra_context(message: str, context: Optional[Dict[str, Any]] = None) -> Optional[str]:
+    """Build operator guidance for RCAAgent.analyze extra_context.
+
+    Bare "Run RCA" starters do not pass a hint. Corrections and any other RCA
+    message include the operator's words plus the previous Workbench/chat RCA.
+    """
+    if not message or not message.strip():
+        return None
+    correction = _is_rca_correction(message)
+    if not correction and _is_bare_rca_request(message):
+        return None
+
+    parts = [f"Operator guidance: {message.strip()}"]
+    prior = _slim_prior_rca((context or {}).get("rca"))
+    if prior:
+        tables = ", ".join(prior.get("affected_tables") or []) or "none listed"
+        parts.append(
+            "Previous RCA the operator is responding to:\n"
+            f"- Root: {prior.get('root_cause_name')} ({prior.get('root_cause_node')})\n"
+            f"- Category: {prior.get('category')} · confidence {prior.get('confidence')}\n"
+            f"- Summary: {prior.get('summary')}\n"
+            f"- Tables: {tables}"
+        )
+    if correction:
+        parts.append(
+            "INSTRUCTION: The operator rejected the previous root cause. "
+            "Do NOT repeat that conclusion. Find a more specific or different exact "
+            "root cause from SQL, procedure, and table evidence."
+        )
+    return "\n".join(parts)
+
 
 def _detect_intent(msg: str, context: Optional[Dict[str, Any]] = None) -> str:
     m = msg.lower()
@@ -55,6 +135,8 @@ def _detect_intent(msg: str, context: Optional[Dict[str, Any]] = None) -> str:
     if "fix" in m and any(k in m for k in ("suggest", "propose", "recommend")):
         return "suggest_fix"
 
+    if _is_rca_correction(m):
+        return "run_rca"
     if any(k in m for k in ("also check", "what about", "consider", "rerun rca", "re-run rca", "refine")):
         return "run_rca"
     if any(k in m for k in ("rca", "root cause", "why did", "why is", "analyze")):
@@ -147,7 +229,7 @@ class ChatAgent(BaseAgent):
         date_to = dash.get("dateTo", "now")
 
         tone_hint = {
-            "run_rca": "Be analytical. Explain root causes clearly, referencing specific tasks and errors.",
+            "run_rca": "Be analytical. Explain root causes clearly, referencing specific tasks and errors. If the operator rejected a previous RCA, lead with what changed and the new exact root cause.",
             "suggest_fix": "Be actionable. Describe exactly what to change and why.",
             "failed_tasks": "Be diagnostic. Summarize failures concisely with error highlights.",
             "failed_dq": "Be diagnostic. Explain which quality checks failed and their implications.",
@@ -223,6 +305,16 @@ class ChatAgent(BaseAgent):
         if not streamed:
             yield fallback
 
+    def _run_rca_from_chat(self, message: str, pipeline_id: str,
+                           context: Dict[str, Any]) -> tuple[Dict[str, Any], Optional[str], str]:
+        extra = _build_rca_extra_context(message, context)
+        date_from, date_to = _dates_from_context(context)
+        payload = RCAAgent().analyze(
+            pipeline_id, extra_context=extra, date_from=date_from, date_to=date_to,
+        )
+        fallback = self._format_rca_reply(payload, extra, refined=bool(extra))
+        return payload, extra, fallback
+
     def handle(self, message: str, pipeline_id: Optional[str] = None,
                context: Optional[Dict[str, Any]] = None,
                history: Optional[List[Dict[str, str]]] = None) -> Dict[str, Any]:
@@ -236,11 +328,8 @@ class ChatAgent(BaseAgent):
 
         if needs_pipeline and pipeline_id:
             if intent == "run_rca":
-                extra = message if any(k in message.lower() for k in
-                                       ("also", "check", "what about", "consider", "because", "source")) else None
-                payload = RCAAgent().analyze(pipeline_id, extra_context=extra)
+                payload, extra, fallback = self._run_rca_from_chat(message, pipeline_id, context)
                 agent = "rca"
-                fallback = self._format_rca_reply(payload, extra)
                 reply = payload.get("chat_narrative") or self._generate_reply(intent, payload, message, context, history, fallback)
 
             elif intent == "resolution":
@@ -376,11 +465,9 @@ class ChatAgent(BaseAgent):
 
         if needs_pipeline and pipeline_id:
             if intent == "run_rca":
-                extra = message if any(k in message.lower() for k in
-                                       ("also", "check", "what about", "consider", "because", "source")) else None
-                payload = RCAAgent().analyze(pipeline_id, extra_context=extra)
+                payload, extra, fallback = self._run_rca_from_chat(message, pipeline_id, context)
                 agent = "rca"
-                fallback = payload.get("chat_narrative") or self._format_rca_reply(payload, extra)
+                fallback = payload.get("chat_narrative") or fallback
             elif intent == "resolution":
                 fallback, payload, agent = self._resolution_reply(pipeline_id, context)
             elif intent == "explain_failure":
@@ -465,7 +552,7 @@ class ChatAgent(BaseAgent):
         return meta, generator
 
     def _format_rca_reply(self, payload: Dict[str, Any], extra: Optional[str],
-                          detailed: bool = False) -> str:
+                          detailed: bool = False, refined: bool = False) -> str:
         if payload.get("error"):
             return f"RCA could not run: {payload['error']}"
         lines = [
@@ -495,8 +582,12 @@ class ChatAgent(BaseAgent):
             lines.append("  • Ask for a 'resolution plan' or 'suggest fix'")
             lines.append("  • Open Workbench for lineage graph and fix diff")
             lines.append("  • Say 'validate fix' after approving a change")
-        if extra:
-            lines.append("\n(Incorporated your additional context.)")
+        if extra or refined:
+            note = (payload.get("refinement") or {}).get("note") if isinstance(payload.get("refinement"), dict) else None
+            lines.append("\nRe-ran RCA with your guidance. Workbench is updated with this report.")
+            if note:
+                lines.append(f"Refinement: {note}")
+            lines.append("If this still looks wrong, name a table or task to inspect next.")
         return "\n".join(lines)
 
     def _failed_tasks_reply(self, context: Dict[str, Any]) -> tuple[Dict[str, Any], str]:
@@ -714,10 +805,8 @@ class ChatAgent(BaseAgent):
         return {}, f"{task_reply}\n\n---\n\n{dq_reply}"
 
     def report_activity_error(self, error_ctx: Dict[str, Any]) -> Dict[str, Any]:
-        llm = self.think({"type": "activity_error", **error_ctx})
-        reply = (llm or {}).get("reply") if llm else None
-        if not reply:
-            reply = self._activity_error_reply(error_ctx)
+        # Local template only — no Claude call (keeps this endpoint fast).
+        reply = self._activity_error_reply(error_ctx)
         self.learn({"signature": f"activity-error {error_ctx.get('action', '')[:40]}",
                     "error": error_ctx.get("error"), "tab": error_ctx.get("tab")})
         return {"reply": reply, "intent": "activity_error", "agent": "chat", "payload": error_ctx}
@@ -860,6 +949,7 @@ class ChatAgent(BaseAgent):
             "  • failed DQ checks — list failed quality checks",
             "  • task summary / DQ summary — KPI overview",
             "  • Run RCA — root-cause analysis (select a task first)",
+            "  • this RCA is not correct — re-run RCA with your guidance",
             "  • resolution plan — RCA + suggested fix",
             "  • suggest fix / validate fix — in Workbench flow",
             "\nClick any table row to set context, then ask follow-up questions.",
