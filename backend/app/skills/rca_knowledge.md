@@ -141,3 +141,13 @@ ADDED_BY: user
 ADDED_ON: 2026-08-12
 NOTES: 
 ---
+
+---
+PATTERN: Diagnostic query shows L3 columns are NULL in the joined result, confirming no match occurred
+CATEGORY: Data Quality Failure
+ROOT_CAUSE: Kerendia segment cardinality mismatch between L2 DIM_TARGETS_HCP and L3 ANLT_BASE_DIM_HCP_BRAND_PRFL — both tables show 5 distinct SEG_GRP_1 values and 2 distinct SEG_GRP_2 values, yet the check fails, indicating the LEFT JOIN condition fails to match despite identical counts.
+FIX: Update the DQ SQL join condition from {{code:ON A.PROD_BRAND_NM=B.PROD_BRAND_NM}} to {{code:ON UPPER(A.PROD_BRAND_NM)=UPPER(B.PROD_BRAND_NM)}} to ensure case-insensitive matching. Alternatively, add {{code:TRIM()}} if whitespace is also a concern: {{code:ON UPPER(TRIM(A.PROD_BRAND_NM))=UPPER(TRIM(B.PROD_BRAND_NM))}}. This will allow the check to match 'KERENDIA' and 'Kerendia' as the same brand.
+ADDED_BY: user
+ADDED_ON: 2026-08-21
+NOTES: 
+---

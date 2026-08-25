@@ -231,7 +231,28 @@ button { font-family: inherit; cursor: pointer; }
 /* ---- Toolbar / inputs ---------------------------------------------- */
 .toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
 .toolbar label { color: var(--muted); font-size: 13px; margin-right: 4px; }
-select, input[type=date], input[type=text], input[type=number], textarea {
+.toolbar__search {
+  flex: 1 1 320px;
+  min-width: min(100%, 320px);
+  max-width: 520px;
+}
+.toolbar__search--dq {
+  flex: 0 0 auto;
+  min-width: 0;
+  max-width: none;
+  width: 34ch;
+}
+.toolbar__search--tasks {
+  flex: 0 0 auto;
+  min-width: 0;
+  max-width: none;
+  width: 28ch;
+}
+.toolbar__search input {
+  width: 100%;
+  box-sizing: border-box;
+}
+select, input[type=date], input[type=text], input[type=number], input[type=search], textarea {
   background: var(--panel2); color: var(--text); border: 1px solid var(--border);
   border-radius: 8px; padding: 7px 10px; font-size: 13px; }
 
@@ -303,7 +324,7 @@ tr:hover td { background: var(--panel2); }
   display: block;
 }
 .table-lineage-scroll {
-  max-height: 260px;
+  max-height: 320px;
   overflow: auto;
   border-radius: 8px;
   border: 1px solid var(--border);

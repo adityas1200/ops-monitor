@@ -96,9 +96,16 @@ function matchesDqTextFilter(check, nameFilter) {
     check.name,
     check.table_name,
     check.column_name,
-    formatRunAt(check.run_at),
-    check.run_at,
   ]
+    .filter(Boolean)
+    .map((v) => String(v).toLowerCase())
+  return haystack.some((v) => v.includes(needle))
+}
+
+function matchesTaskTextFilter(pipeline, nameFilter) {
+  const needle = (nameFilter || '').trim().toLowerCase()
+  if (!needle) return true
+  const haystack = [pipeline.name, pipeline.platform]
     .filter(Boolean)
     .map((v) => String(v).toLowerCase())
   return haystack.some((v) => v.includes(needle))
@@ -135,9 +142,8 @@ function TasksView({ data, status, nameFilter, loading, configured, onRunRCA, on
   }, [])
 
   const rows = useMemo(() => {
-    const needle = (nameFilter || '').toLowerCase()
     const filtered = allPipelines.filter((p) =>
-      matchesStatus(p, status) && (!needle || (p.name || '').toLowerCase().includes(needle))
+      matchesStatus(p, status) && matchesTaskTextFilter(p, nameFilter)
     )
     return sortRows(filtered, sortCol, sortDir)
   }, [allPipelines, status, nameFilter, sortCol, sortDir])
@@ -577,16 +583,21 @@ export default function Dashboard({
       )}
 
       <div className={`toolbar${busy ? ' is-busy' : ''}`}>
-        <label>Search</label>
-        <input
-          type="text"
-          placeholder={subTab === 'dq'
-            ? 'Filter by QC ID, subject area, check type, run at…'
-            : 'Filter by name…'}
-          value={nameFilter}
-          onChange={(e) => setNameFilter(e.target.value)}
-          style={{ minWidth: 160 }}
-        />
+        <label htmlFor="dash-search">Search</label>
+        <div className={`toolbar__search${subTab === 'dq' ? ' toolbar__search--dq' : ' toolbar__search--tasks'}`}>
+          <input
+            id="dash-search"
+            type="search"
+            placeholder={subTab === 'dq'
+              ? 'QC ID, subject area, check type'
+              : 'Pipeline / task, platform'}
+            value={nameFilter}
+            onChange={(e) => setNameFilter(e.target.value)}
+            aria-label={subTab === 'dq'
+              ? 'Search DQ checks by QC ID, subject area, or check type'
+              : 'Search tasks by pipeline, task, or platform'}
+          />
+        </div>
         <label>Status</label>
         <select
           value={status}
@@ -616,16 +627,13 @@ export default function Dashboard({
           </button>
         )}
       </div>
-      {subTab === 'dq' && dqData && (
+      {subTab === 'dq' && dqData && (dqData.status_mode === 'live' || dqData.status_mode === 'cached_live') && (
         <p className="muted" style={{ margin: '6px 0 0', fontSize: 12 }}>
           {dqData.status_mode === 'live' && (
             <>Live statuses just revalidated{dqData.cache_updated_at ? ` · saved ${new Date(dqData.cache_updated_at).toLocaleString()}` : ''} · valid 30 min</>
           )}
           {dqData.status_mode === 'cached_live' && (
             <>From revalidate cache{dqData.cache_updated_at ? ` · ${new Date(dqData.cache_updated_at).toLocaleString()}` : ''} · TTL 30 min</>
-          )}
-          {dqData.status_mode === 'recorded' && (
-            <>Recorded only · use Revalidate live for current pass/fail</>
           )}
         </p>
       )}

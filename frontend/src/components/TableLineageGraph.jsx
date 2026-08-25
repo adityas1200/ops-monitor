@@ -24,31 +24,33 @@ const COLORS_DOWNSTREAM = {
   source:     '#8b95a5',
 }
 
-const NODE_SIZES = {
-  table:     { w: 132, h: 28 },
-  task:      { w: 138, h: 34 },
-  view:      { w: 132, h: 28 },
-  procedure: { w: 132, h: 28 },
-}
+const PAD_X = 16
+const CHAR_W = 7.2
+const MIN_W = 120
+const TASK_H = 34
+const CHIP_H = 28
+const ROW_GAP = 8
+const COL_GAP = 28
 
-/** Prefer the last segment of an FQN / task name for readable chips. */
-function shortLabel(raw, max = 20) {
+function displayLabel(raw) {
   if (!raw) return ''
-  let text = String(raw).replace(/^SF Task:\s*/i, '').trim()
-  if (text.includes('.')) {
-    const parts = text.split('.').filter(Boolean)
-    text = parts[parts.length - 1] || text
-  }
-  if (text.length <= max) return text
-  return `${text.slice(0, max - 1)}…`
+  return String(raw).replace(/^SF Task:\s*/i, '').trim()
 }
 
 function fullLabel(n) {
-  return n.label || n.name || n.id || ''
+  return displayLabel(n.label || n.name || n.id || '')
+}
+
+function nodeSize(n) {
+  const label = fullLabel(n)
+  const w = Math.max(MIN_W, Math.ceil(label.length * CHAR_W) + PAD_X * 2)
+  const h = n.type === 'task' ? TASK_H : CHIP_H
+  return { w, h }
 }
 
 function layout(nodes, edges) {
   const byId = Object.fromEntries(nodes.map((n) => [n.id, n]))
+  const sizes = Object.fromEntries(nodes.map((n) => [n.id, nodeSize(n)]))
   const incoming = {}
   const adj = {}
   nodes.forEach((n) => { incoming[n.id] = 0; adj[n.id] = [] })
@@ -75,18 +77,36 @@ function layout(nodes, edges) {
 
   const cols = {}
   nodes.forEach((n) => { (cols[level[n.id]] ||= []).push(n.id) })
+
+  const colWidths = {}
+  Object.entries(cols).forEach(([lvl, ids]) => {
+    colWidths[lvl] = Math.max(...ids.map((id) => sizes[id].w), MIN_W)
+  })
+
+  const colX = {}
+  let xCursor = 16
+  const maxLevel = Math.max(0, ...Object.values(level))
+  for (let lvl = 0; lvl <= maxLevel; lvl++) {
+    colX[lvl] = xCursor
+    xCursor += (colWidths[lvl] || MIN_W) + COL_GAP
+  }
+
   const pos = {}
-  const COLW = 158
-  const ROWH = 40
   Object.entries(cols).forEach(([lvl, ids]) => {
     ids.forEach((id, i) => {
-      pos[id] = { x: 16 + Number(lvl) * COLW, y: 14 + i * ROWH }
+      const size = sizes[id]
+      pos[id] = {
+        x: colX[lvl],
+        y: 14 + i * (Math.max(TASK_H, CHIP_H) + ROW_GAP),
+        w: size.w,
+        h: size.h,
+      }
     })
   })
-  const maxLevel = Math.max(0, ...Object.values(level))
+
   const maxCol = Math.max(0, ...Object.values(cols).map((c) => c.length))
-  const width = 32 + (maxLevel + 1) * COLW
-  const height = 28 + maxCol * ROWH
+  const width = xCursor + 8
+  const height = 28 + maxCol * (Math.max(TASK_H, CHIP_H) + ROW_GAP)
   return { pos, width, height }
 }
 
@@ -115,12 +135,10 @@ function LineageGraphSvg({ nodes, edges, colorMap, markerId }) {
         const a = pos[e.from]
         const b = pos[e.to]
         if (!a || !b) return null
-        const fSize = NODE_SIZES[fromNode.type] || NODE_SIZES.table
-        const tSize = NODE_SIZES[toNode.type] || NODE_SIZES.table
-        const x1 = a.x + fSize.w
-        const y1 = a.y + fSize.h / 2
+        const x1 = a.x + a.w
+        const y1 = a.y + a.h / 2
         const x2 = b.x
-        const y2 = b.y + tSize.h / 2
+        const y2 = b.y + b.h / 2
         const mx = (x1 + x2) / 2
         const dashed = fromNode.type === 'task' || toNode.type === 'task'
           || toNode.type === 'view' || toNode.type === 'procedure'
@@ -142,24 +160,21 @@ function LineageGraphSvg({ nodes, edges, colorMap, markerId }) {
         const p = pos[n.id]
         if (!p) return null
         const c = colors[n.state] || '#6b7689'
-        const size = NODE_SIZES[n.type] || NODE_SIZES.table
-        const full = fullLabel(n)
-        const label = shortLabel(full, n.type === 'task' ? 18 : 18)
-        const title = full
+        const label = fullLabel(n)
         const isRoot = n.state === 'root_cause'
 
         if (n.type === 'task') {
           return (
             <g key={n.id}>
-              <title>{title}</title>
+              <title>{label}</title>
               <rect
-                x={p.x} y={p.y} width={size.w} height={size.h} rx="6"
+                x={p.x} y={p.y} width={p.w} height={p.h} rx="6"
                 fill="var(--code-bg)" stroke={c}
                 strokeWidth={isRoot ? 2 : 1.2}
               />
-              <text x={p.x + 8} y={p.y + 13}
+              <text x={p.x + 10} y={p.y + 13}
                 fill="var(--text)" fontSize="10" fontWeight="600">{label}</text>
-              <text x={p.x + 8} y={p.y + 25}
+              <text x={p.x + 10} y={p.y + 25}
                 fill={c} fontSize="8">
                 {(n.platform || 'snowflake')} · {(n.state || '').replace('_', ' ')}
               </text>
@@ -168,18 +183,18 @@ function LineageGraphSvg({ nodes, edges, colorMap, markerId }) {
         }
 
         const dash = n.type === 'view' ? '4,2' : n.type === 'procedure' ? '2,2' : undefined
-        const rx = n.type === 'procedure' ? 5 : size.h / 2
+        const rx = n.type === 'procedure' ? 5 : p.h / 2
         return (
           <g key={n.id}>
-            <title>{title}</title>
+            <title>{label}</title>
             <rect
-              x={p.x} y={p.y} width={size.w} height={size.h} rx={rx}
+              x={p.x} y={p.y} width={p.w} height={p.h} rx={rx}
               fill="var(--code-bg)" stroke={c}
               strokeWidth={isRoot ? 2 : 1.2}
               strokeDasharray={dash}
             />
             <text
-              x={p.x + 10} y={p.y + size.h / 2 + 3.5}
+              x={p.x + 10} y={p.y + p.h / 2 + 3.5}
               fill="var(--text)" fontSize="10" fontWeight={n.type === 'table' ? 600 : 500}
             >
               {label}
@@ -192,7 +207,8 @@ function LineageGraphSvg({ nodes, edges, colorMap, markerId }) {
 }
 
 /**
- * Compact, scrollable lineage graph for upstream / downstream RCA sections.
+ * Scrollable lineage graph for upstream / downstream RCA sections.
+ * Node boxes size to the full object name (horizontal scroll when needed).
  */
 export default function TableLineageGraph({
   tableLineage,
@@ -251,7 +267,7 @@ export default function TableLineageGraph({
             <span><span className="dot" style={{ background: COLORS.failed }} />Failed</span>
             <span><span className="dot" style={{ background: COLORS.impacted }} />Impacted</span>
             <span><span className="dot" style={{ background: COLORS.source }} />Source</span>
-            <span className="muted" style={{ fontSize: 11 }}>Hover a node for full name · scroll if needed</span>
+            <span className="muted" style={{ fontSize: 11 }}>Scroll to see the full graph</span>
           </div>
           <div className="table-lineage-scroll">
             <LineageGraphSvg nodes={nodes} edges={edges} colorMap={colorMap} markerId={markerId} />

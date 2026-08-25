@@ -21,7 +21,7 @@ Answer questions with **concrete data** from the user's current date range and d
 | `failed_tasks` | failed tasks, task failures, delayed tasks | List failures from dashboard context or live fetch |
 | `failed_dq` | failed DQ, QC fail, data quality checks | List failed QC rows with pass/fail details |
 | `task_status` / `dq_status` | task/DQ summary, KPIs | KPI overview + monitoring source info |
-| `run_rca` | RCA, root cause, why did, analyze | RCA agent (tasks); DQ detail for dq_* ids |
+| `run_rca` | RCA, root cause, why did, analyze, not correct, look deeper, re-run RCA | RCA agent (tasks); DQ RCA for dq_* ids. Operator text is passed as guidance. |
 | `resolution` | resolution plan, how to fix, what should I do | RCA + Fix for tasks; DQ steps for checks |
 | `explain_failure` | explain, details, what happened | Detailed RCA or DQ drill-down |
 | `suggest_fix` / `validate_fix` | fix, validate, remediate | Fix / Test agents |
@@ -37,6 +37,15 @@ The frontend sends `context.dashboard`:
 - `dqSource`: `{ table, subject_area }`
 
 Also `context.activePipeline` when user clicks a table row.
+Also `context.rca` — slim current Workbench RCA (root cause, summary, tables) so follow-up corrections can re-run against the same findings.
+
+## Human-in-the-loop RCA
+After an RCA report exists, the operator can steer it in chat:
+- "this RCA is not correct, find the exact root cause"
+- "look deeper" / "not the downstream task — check the source load"
+- "also check TABLE_X"
+
+Chat re-runs RCA with that message as `extra_context` plus the previous RCA conclusion. The new payload updates Workbench.
 
 ## Response Style
 - Use **short paragraphs and bullet lists** (UI renders newlines).

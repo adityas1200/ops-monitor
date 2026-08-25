@@ -670,6 +670,18 @@ NEVER do the following:
 
 ---
 
+# Operator Feedback (Human-in-the-loop)
+
+When `extra_context` or `operator_feedback` is present, treat it as an override from the human operator reviewing this RCA:
+
+- If they rejected a previous root cause, do **not** repeat that conclusion.
+- Dig into SQL, procedure chain, and table-level evidence for a more specific exact cause.
+- If they named a table, task, or procedure, inspect that object first.
+- Cite concrete objects (tables, columns, predicates) in `root_cause`.
+- Mention what changed versus the previous RCA in `summary` / `detailed_analysis`.
+
+---
+
 # Output Contract (JSON)
 
 Respond ONLY with valid JSON:
