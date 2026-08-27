@@ -243,20 +243,6 @@ export default function ChatWindow({
   const send = () => sendText(input)
   const quick = (t) => sendText(t)
 
-  const contextHint = useMemo(() => {
-    const dash = activityContext.dashboard
-    if (!dash) return null
-    const parts = []
-    if (dash.view === 'dq' && dash.failedDqChecks?.length) {
-      parts.push(`${dash.failedDqChecks.length} failed DQ`)
-    }
-    if (dash.view !== 'dq' && dash.failedTasks?.length) {
-      parts.push(`${dash.failedTasks.length} failed/delayed tasks`)
-    }
-    if (dash.dateFrom && dash.dateTo) parts.push(`${dash.dateFrom} → ${dash.dateTo}`)
-    return parts.length ? parts.join(' · ') : null
-  }, [activityContext.dashboard])
-
   return (
     <div className="chat-window">
       <div className="chat-head">
@@ -272,7 +258,6 @@ export default function ChatWindow({
             ×
           </button>
         </div>
-        {contextHint && <div className="chat-context-hint">{contextHint}</div>}
         {activePipeline && (
           <div className="chat-context-hint">
             Selected: {activePipeline.name}

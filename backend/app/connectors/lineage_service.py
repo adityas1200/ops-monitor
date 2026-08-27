@@ -723,6 +723,186 @@ class LineageService:
 
         return {"nodes": nodes, "edges": edges}
 
+    def build_dq_check_lineage_graphs(
+        self,
+        tables: List[str],
+        check_id: str,
+        check_label: str,
+        downstream_map: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+        procedure_chain: Optional[List[Dict[str, Any]]] = None,
+    ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        """Build upstream/downstream graphs for a DQ check without a correlated failed task.
+
+        Upstream: writer procedures/tasks (and their inputs) → DQ tables → DQ check.
+        Downstream: DQ tables → views/procedures from INFORMATION_SCHEMA discovery.
+        """
+        unique_tables = [t for t in list(dict.fromkeys(tables or [])) if t][:8]
+        check_node_id = check_id or "dq_check"
+        check_node_label = check_label or check_id or "DQ check"
+
+        def _empty() -> Dict[str, Any]:
+            return {"nodes": [], "edges": []}
+
+        # ── Upstream ────────────────────────────────────────────────────────
+        up_nodes: List[Dict[str, Any]] = []
+        up_edges: List[Dict[str, Any]] = []
+        up_seen: Set[str] = set()
+        up_edge_seen: Set[Tuple[str, str]] = set()
+
+        def up_add(nid: str, **kw: Any) -> None:
+            if nid not in up_seen:
+                up_seen.add(nid)
+                # TableLineageGraph reads label || name
+                if "label" not in kw and "name" in kw:
+                    kw["label"] = kw["name"]
+                up_nodes.append({"id": nid, **kw})
+
+        def up_edge(a: str, b: str) -> None:
+            pair = (a, b)
+            if pair not in up_edge_seen and a != b:
+                up_edge_seen.add(pair)
+                up_edges.append({"from": a, "to": b})
+
+        if unique_tables or check_id:
+            up_add(
+                check_node_id,
+                label=f"DQ: {check_node_label}",
+                name=f"DQ: {check_node_label}",
+                type="task",
+                state="failed",
+                platform="dq",
+            )
+
+        for i, tbl in enumerate(unique_tables):
+            tbl_id = f"tbl_{tbl}"
+            up_add(
+                tbl_id,
+                label=tbl,
+                name=tbl,
+                type="table",
+                state="root_cause" if i == 0 else "failed",
+            )
+            up_edge(tbl_id, check_node_id)
+
+        for proc in (procedure_chain or [])[:5]:
+            obj_name = proc.get("object_name") or ""
+            if not obj_name:
+                continue
+            obj_type = proc.get("object_type") or "procedure"
+            proc_id = f"{obj_type}_{obj_name}"
+            up_add(
+                proc_id,
+                label=obj_name,
+                name=obj_name.split(".")[-1] if "." in obj_name else obj_name,
+                type="procedure" if obj_type != "task" else "task",
+                state="healthy",
+                platform="snowflake",
+            )
+            outputs = [str(o).upper() for o in (proc.get("outputs") or [])]
+            linked = False
+            for tbl in unique_tables:
+                bare = tbl.split(".")[-1].upper()
+                tbl_u = tbl.upper()
+                if any(o == tbl_u or o.endswith(f".{bare}") or o.split(".")[-1] == bare for o in outputs) or not outputs:
+                    up_edge(proc_id, f"tbl_{tbl}")
+                    linked = True
+                    if outputs:
+                        break
+            if not linked and unique_tables:
+                up_edge(proc_id, f"tbl_{unique_tables[0]}")
+            for inp in (proc.get("inputs") or [])[:6]:
+                inp_s = str(inp)
+                if not inp_s:
+                    continue
+                if inp_s.upper() in {t.upper() for t in unique_tables}:
+                    continue
+                src_id = f"tbl_{inp_s}"
+                up_add(src_id, label=inp_s, name=inp_s, type="table", state="source")
+                up_edge(src_id, proc_id)
+
+        # If we have tables but no writers, still show tables as sources into the check.
+        if unique_tables and not (procedure_chain or []):
+            for tbl in unique_tables:
+                # already connected table → check above
+                pass
+
+        upstream = {"nodes": up_nodes, "edges": up_edges} if up_nodes else _empty()
+
+        # ── Downstream ──────────────────────────────────────────────────────
+        dn_nodes: List[Dict[str, Any]] = []
+        dn_edges: List[Dict[str, Any]] = []
+        dn_seen: Set[str] = set()
+        dn_edge_seen: Set[Tuple[str, str]] = set()
+
+        def dn_add(nid: str, **kw: Any) -> None:
+            if nid not in dn_seen:
+                dn_seen.add(nid)
+                if "label" not in kw and "name" in kw:
+                    kw["label"] = kw["name"]
+                dn_nodes.append({"id": nid, **kw})
+
+        def dn_edge(a: str, b: str) -> None:
+            pair = (a, b)
+            if pair not in dn_edge_seen and a != b:
+                dn_edge_seen.add(pair)
+                dn_edges.append({"from": a, "to": b})
+
+        dmap = downstream_map or {}
+        for i, tbl in enumerate(unique_tables):
+            tbl_id = f"tbl_{tbl}"
+            dn_add(
+                tbl_id,
+                label=tbl,
+                name=tbl,
+                type="table",
+                state="root_cause" if i == 0 else "failed",
+            )
+            consumers = dmap.get(tbl) or []
+            # Also match by bare / case-insensitive key
+            if not consumers:
+                bare = tbl.split(".")[-1].upper()
+                for k, items in dmap.items():
+                    if str(k).upper() == tbl.upper() or str(k).split(".")[-1].upper() == bare:
+                        consumers = items
+                        break
+            for item in (consumers or [])[:10]:
+                fqn = item.get("fqn") or item.get("name") or ""
+                if not fqn:
+                    continue
+                ntype = item.get("type") or "view"
+                node_id = f"{ntype}_{fqn}"
+                dn_add(
+                    node_id,
+                    label=item.get("name") or fqn,
+                    name=item.get("name") or fqn,
+                    type=ntype,
+                    state="impacted",
+                )
+                dn_edge(tbl_id, node_id)
+
+        # If discovery found consumers under keys not in unique_tables, still show them.
+        if not dn_edges and dmap:
+            for parent_tbl, consumers in dmap.items():
+                parent_id = f"tbl_{parent_tbl}"
+                dn_add(parent_id, label=parent_tbl, name=parent_tbl, type="table", state="failed")
+                for item in (consumers or [])[:10]:
+                    fqn = item.get("fqn") or item.get("name") or ""
+                    if not fqn:
+                        continue
+                    ntype = item.get("type") or "view"
+                    node_id = f"{ntype}_{fqn}"
+                    dn_add(
+                        node_id,
+                        label=item.get("name") or fqn,
+                        name=item.get("name") or fqn,
+                        type=ntype,
+                        state="impacted",
+                    )
+                    dn_edge(parent_id, node_id)
+
+        downstream = {"nodes": dn_nodes, "edges": dn_edges} if dn_nodes else _empty()
+        return upstream, downstream
+
     # ---- Downstream lineage graph ----------------------------------------
 
     def build_downstream_lineage_graph(

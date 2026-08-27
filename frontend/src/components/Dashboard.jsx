@@ -438,14 +438,16 @@ export default function Dashboard({
     return () => { cancelled = true }
   }, [])
 
-  const loadTasks = useCallback(() => {
-    const key = `${dateFromIso || ''}|${dateToIso || ''}`
+  const loadTasks = useCallback((opts = {}) => {
+    const fromIso = opts.date_from !== undefined ? opts.date_from : dateFromIso
+    const toIso = opts.date_to !== undefined ? opts.date_to : dateToIso
+    const key = `${fromIso || ''}|${toIso || ''}`
     if (taskInflightRef.current?.key === key) {
       return taskInflightRef.current.promise
     }
     setTaskLoading(true)
     setTaskLoadError(null)
-    const promise = api.summary({ status: 'ALL', date_from: dateFromIso, date_to: dateToIso })
+    const promise = api.summary({ status: 'ALL', date_from: fromIso, date_to: toIso })
       .then((d) => {
         if (!d.live_only) {
           setTaskData({ ...d, all_pipelines: [], kpis: { success: 0, failed: 0, delayed: 0, skipped: 0, running: 0, total: 0 } })
@@ -474,13 +476,15 @@ export default function Dashboard({
     // Default / date change / refresh: revalidate=false (backend may return cache).
     // Pass revalidate:true only from Revalidate live.
     const revalidate = opts.revalidate === true
-    const key = `${dateFromIso || ''}|${dateToIso || ''}|rv:${revalidate ? 1 : 0}`
+    const fromIso = opts.date_from !== undefined ? opts.date_from : dateFromIso
+    const toIso = opts.date_to !== undefined ? opts.date_to : dateToIso
+    const key = `${fromIso || ''}|${toIso || ''}|rv:${revalidate ? 1 : 0}`
     if (dqInflightRef.current?.key === key) {
       return dqInflightRef.current.promise
     }
     setDqLoading(true)
     setDqLoadError(null)
-    const promise = api.dqSummary({ date_from: dateFromIso, date_to: dateToIso, revalidate })
+    const promise = api.dqSummary({ date_from: fromIso, date_to: toIso, revalidate })
       .then((d) => {
         setDqData(d)
         ;(d.errors || []).forEach((err) => onReportErrorRef.current?.({
@@ -610,9 +614,26 @@ export default function Dashboard({
           ).map((s) => <option key={s}>{s}</option>)}
         </select>
         <label>From</label>
-        <input type="date" value={dateFrom} disabled={busy} onChange={(e) => setDateFrom(e.target.value)} />
+        <input
+          type="date"
+          value={dateFrom}
+          onChange={(e) => {
+            const v = e.target.value
+            // Ignore empty/partial clears; reload only when a full date is chosen.
+            if (v && v !== dateFrom) setDateFrom(v)
+          }}
+          aria-label="Date range from"
+        />
         <label>To</label>
-        <input type="date" value={dateTo} disabled={busy} onChange={(e) => setDateTo(e.target.value)} />
+        <input
+          type="date"
+          value={dateTo}
+          onChange={(e) => {
+            const v = e.target.value
+            if (v && v !== dateTo) setDateTo(v)
+          }}
+          aria-label="Date range to"
+        />
         <button className={`btn sec${busy ? ' is-loading' : ''}`} onClick={refresh} disabled={busy}>
           Refresh
         </button>
@@ -627,16 +648,6 @@ export default function Dashboard({
           </button>
         )}
       </div>
-      {subTab === 'dq' && dqData && (dqData.status_mode === 'live' || dqData.status_mode === 'cached_live') && (
-        <p className="muted" style={{ margin: '6px 0 0', fontSize: 12 }}>
-          {dqData.status_mode === 'live' && (
-            <>Live statuses just revalidated{dqData.cache_updated_at ? ` · saved ${new Date(dqData.cache_updated_at).toLocaleString()}` : ''} · valid 30 min</>
-          )}
-          {dqData.status_mode === 'cached_live' && (
-            <>From revalidate cache{dqData.cache_updated_at ? ` · ${new Date(dqData.cache_updated_at).toLocaleString()}` : ''} · TTL 30 min</>
-          )}
-        </p>
-      )}
 
       <div hidden={subTab !== 'tasks'}>
         {taskLoadError && (

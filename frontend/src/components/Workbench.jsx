@@ -90,6 +90,7 @@ function FixDiff({ fix, onEdit, onValidate, busy }) {
   }
   const facts = (fix.evidence_facts || []).slice(0, 5)
   const hints = fix.validation_hints || []
+  const rejected = fix.rejected_candidates || []
   return (
     <div className="card">
       <h3>Identified Fix · {fix.title}</h3>
@@ -124,7 +125,16 @@ function FixDiff({ fix, onEdit, onValidate, busy }) {
         </div>
         <div>
           <h4 style={{ color: '#2ecc71' }}>After (proposed)</h4>
-          <pre className="after">{fix.after}</pre>
+          {fix.after
+            ? <pre className="after">{fix.after}</pre>
+            : (
+              <pre className="after muted" style={{ fontStyle: 'italic' }}>
+                {'No fix SQL proposed — nothing was invented.\n\n'}
+                {rejected.length > 0
+                  ? `Candidates rejected:\n${rejected.map((r) => `- ${r}`).join('\n')}`
+                  : 'The RCA did not provide runnable SQL for this failure.'}
+              </pre>
+            )}
         </div>
       </div>
       <p className="muted" style={{ fontSize: 12 }}>Rollback: {fix.rollback}</p>
@@ -270,7 +280,10 @@ function ConfidenceSection({ confidence, confidenceLevel, drivers }) {
   )
 }
 
-function RcaReport({ rca, selected, busy, onSuggestFix, onAddKnowledge, onOpenKnowledge }) {
+function RcaReport({
+  rca, selected, busy, onSuggestFix, onAddKnowledge,
+  showKnowledgeForm, knowledgeForm,
+}) {
   const ia = rca.impact_assessment || {}
   const inc = rca.incident_summary || {}
   const sevColor = SEVERITY_COLOR[ia.business_severity] || 'var(--border)'
@@ -334,7 +347,7 @@ function RcaReport({ rca, selected, busy, onSuggestFix, onAddKnowledge, onOpenKn
               tableLineage={rca.upstream_lineage}
               title="Upstream lineage"
               direction="upstream"
-              defaultOpen={false}
+              defaultOpen={rca.analysis_type === 'dq'}
               colorScheme="upstream"
             />
           </div>
@@ -348,7 +361,7 @@ function RcaReport({ rca, selected, busy, onSuggestFix, onAddKnowledge, onOpenKn
             tableLineage={rca.downstream_lineage}
             title="Downstream impact"
             direction="downstream"
-            defaultOpen={false}
+            defaultOpen={rca.analysis_type === 'dq'}
             colorScheme="downstream"
           />
         </div>
@@ -383,11 +396,10 @@ function RcaReport({ rca, selected, busy, onSuggestFix, onAddKnowledge, onOpenKn
           <button className="btn sec" onClick={() => onAddKnowledge?.(rca)}>
             + Add to Knowledge Base
           </button>
-          <button className="btn sec" onClick={() => onOpenKnowledge?.()}>
-            View Knowledge Base
-          </button>
         </div>
       </div>
+
+      {showKnowledgeForm && knowledgeForm}
 
       {/* ═══ CODE ANALYSIS (inline, not collapsible) ═════════════════════════ */}
       {rca.code_analysis?.llm_explanation && (
@@ -607,15 +619,16 @@ export default function Workbench({
           busy={busy}
           onSuggestFix={suggestFix}
           onAddKnowledge={() => setShowKnowledgeForm(true)}
-          onOpenKnowledge={onOpenKnowledge}
-        />
-      )}
-
-      {showKnowledgeForm && rca && (
-        <KnowledgeForm
-          rca={rca}
-          onClose={() => setShowKnowledgeForm(false)}
-          onSaved={onOpenKnowledge}
+          showKnowledgeForm={showKnowledgeForm}
+          knowledgeForm={
+            showKnowledgeForm ? (
+              <KnowledgeForm
+                rca={rca}
+                onClose={() => setShowKnowledgeForm(false)}
+                onSaved={onOpenKnowledge}
+              />
+            ) : null
+          }
         />
       )}
 

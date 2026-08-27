@@ -1680,18 +1680,42 @@ class RCAAgent(BaseAgent):
         dq_fqn_parts = dq_cfg["table_fqn"].split(".")
         ctx_db = (root_task or {}).get("database", "") or (dq_fqn_parts[0] if len(dq_fqn_parts) >= 3 else "")
         ctx_schema = (root_task or {}).get("schema", "") or (dq_fqn_parts[1] if len(dq_fqn_parts) >= 3 else "")
+        # Prefer physical tables from the check; fall back to subject-area resolution.
+        seed_tables = list(check_tables) or all_resolved_tables
+        if not seed_tables and check.get("table_name"):
+            seed_tables = lineage.resolve_dq_tables(check)
         downstream_map = lineage.discover_all_downstream(
-            all_resolved_tables, context_database=ctx_db, context_schema=ctx_schema)
+            seed_tables[:3] or all_resolved_tables, context_database=ctx_db, context_schema=ctx_schema)
         table_lineage = lineage.enrich_table_lineage_with_downstream(table_lineage, downstream_map)
 
         dq_io_keys = {root_key_task} if root_task else None
-        dq_upstream_lineage = lineage.build_upstream_lineage_graph(
-            root_key_task, root_key_task, graph, run_by_key,
-            resolve_io_keys=dq_io_keys) if root_task else {"nodes": [], "edges": []}
-        dq_downstream_lineage = lineage.build_downstream_lineage_graph(
-            root_key_task, root_key_task, impacted_keys, graph, run_by_key,
-            downstream_map=downstream_map,
-            resolve_io_keys=dq_io_keys) if root_task else {"nodes": [], "edges": []}
+        if root_task:
+            dq_upstream_lineage = lineage.build_upstream_lineage_graph(
+                root_key_task, root_key_task, graph, run_by_key,
+                resolve_io_keys=dq_io_keys)
+            dq_downstream_lineage = lineage.build_downstream_lineage_graph(
+                root_key_task, root_key_task, impacted_keys, graph, run_by_key,
+                downstream_map=downstream_map,
+                resolve_io_keys=dq_io_keys)
+        else:
+            dq_label = check.get("name") or check_id
+            dq_upstream_lineage, dq_downstream_lineage = lineage.build_dq_check_lineage_graphs(
+                seed_tables,
+                check_id=check_id,
+                check_label=str(dq_label),
+                downstream_map=downstream_map,
+                procedure_chain=None,
+            )
+            if dq_upstream_lineage.get("nodes") or dq_downstream_lineage.get("nodes"):
+                journey.append({
+                    "step": "Table lineage resolved",
+                    "status": "done",
+                    "detail": (
+                        f"{len(dq_upstream_lineage.get('nodes') or [])} upstream / "
+                        f"{len(dq_downstream_lineage.get('nodes') or [])} downstream "
+                        f"node(s) from DQ tables"
+                    ),
+                })
 
         downstream_consumers = {
             "views": sum(1 for items in downstream_map.values() for i in items if i["type"] == "view"),
@@ -1809,12 +1833,23 @@ class RCAAgent(BaseAgent):
             and (("000604" in exec_err) or ("timeout" in exec_err.lower()))
         )
 
-        # If we still have no physical tables, parse them straight out of the rule
-        # SQL so the root cause can name exact objects.
-        if not check_tables and dq_rule and dq_rule.get("SQL_CODE"):
-            sql_tables = parse_tables_from_text(dq_rule.get("SQL_CODE"))
-            if sql_tables:
-                check_tables = set(sql_tables)
+        # Seed physical tables from the rule definition (SOURCE_TABLE + SQL_CODE FQNs).
+        # Subject area is often a dashboard name (e.g. "Kerendia Validations"), not a table.
+        if dq_rule:
+            rule_tables: List[str] = []
+            src = (dq_rule.get("SOURCE_TABLE") or dq_rule.get("source_table") or "").strip()
+            if src:
+                if src.count(".") >= 2:
+                    rule_tables.append(src.upper())
+                elif ctx_db and ctx_schema:
+                    rule_tables.append(f"{ctx_db}.{ctx_schema}.{src.split('.')[-1]}".upper())
+                else:
+                    rule_tables.append(src.upper())
+            sql_code = dq_rule.get("SQL_CODE") or dq_rule.get("sql_code") or ""
+            if sql_code:
+                rule_tables.extend(parse_tables_from_text(sql_code))
+            if rule_tables:
+                check_tables = set(list(check_tables) + rule_tables)
 
         # A failed DQ check is, by definition, a data-quality failure.
         if category == CATEGORY_UNKNOWN:
@@ -1919,6 +1954,56 @@ class RCAAgent(BaseAgent):
                     "detail": (
                         f"{len(procedure_chain)} procedure(s) referencing "
                         f"{resolved_tables[0] if resolved_tables else 'failing table'}"
+                    ),
+                })
+
+        # Rebuild table-centric lineage once rule SQL / writers are known (no root task).
+        # Always refresh when we have tables or a writer chain so Workbench shows graphs.
+        if not root_task:
+            final_tables = list(check_tables)
+            fqn_from_sql = parse_tables_from_text(
+                (dq_rule or {}).get("SQL_CODE") or dq_rule_sql or ""
+            )
+            if fqn_from_sql:
+                final_tables = list(dict.fromkeys([*fqn_from_sql, *final_tables]))
+                check_tables = set(final_tables)
+            if final_tables:
+                refreshed_down = lineage.discover_all_downstream(
+                    final_tables[:3], context_database=ctx_db, context_schema=ctx_schema)
+                if refreshed_down:
+                    downstream_map = refreshed_down
+                    downstream_consumers = {
+                        "views": sum(
+                            1 for items in downstream_map.values() for i in items if i["type"] == "view"
+                        ),
+                        "procedures": sum(
+                            1 for items in downstream_map.values()
+                            for i in items if i["type"] == "procedure"
+                        ),
+                        "details": [item for items in downstream_map.values() for item in items][:20],
+                    }
+                    table_lineage = lineage.enrich_table_lineage_with_downstream(
+                        table_lineage if table_lineage.get("nodes") else {"nodes": [], "edges": []},
+                        downstream_map,
+                    )
+            new_up, new_dn = lineage.build_dq_check_lineage_graphs(
+                final_tables,
+                check_id=check_id,
+                check_label=str(check_label),
+                downstream_map=downstream_map,
+                procedure_chain=procedure_chain,
+            )
+            if new_up.get("nodes"):
+                dq_upstream_lineage = new_up
+            if new_dn.get("nodes"):
+                dq_downstream_lineage = new_dn
+            if new_up.get("nodes") or new_dn.get("nodes"):
+                journey.append({
+                    "step": "Table lineage refreshed",
+                    "status": "done",
+                    "detail": (
+                        f"{len(new_up.get('nodes') or [])} upstream / "
+                        f"{len(new_dn.get('nodes') or [])} downstream node(s)"
                     ),
                 })
 
