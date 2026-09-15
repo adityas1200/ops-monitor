@@ -40,11 +40,12 @@ function snowflakeHints(service, sf = {}, sfAuthMethod = 'password', idpUrl = ''
   const detail = (service.detail || '').toLowerCase()
   const hints = []
   const isSso = sfAuthMethod === 'sso'
+  const isKeypair = sfAuthMethod === 'keypair'
 
   if (!sf.account?.trim()) {
     hints.push('Enter your Snowflake Account under Settings → Snowflake.')
   }
-  if (!sf.user?.trim()) {
+  if (!sf.user?.trim() && !isSso) {
     hints.push('Enter your Snowflake User / login name.')
   }
   if (!sf.warehouse?.trim()) {
@@ -53,7 +54,18 @@ function snowflakeHints(service, sf = {}, sfAuthMethod = 'password', idpUrl = ''
   if (!sf.role?.trim()) {
     hints.push('Enter the Role name (required).')
   }
-  if (!isSso) {
+  if (isKeypair) {
+    if (!sf.private_key_pem?.trim() || String(sf.private_key_pem).includes('***')) {
+      hints.push('Paste the full private key PEM — masked values (with ***) are not re-sent when you save.')
+    }
+    if (detail.includes('jwt') || detail.includes('authentication') || detail.includes('250001') || detail.includes('390144')) {
+      hints.push('Confirm the public key on the Snowflake user matches this private key (ALTER USER … SET RSA_PUBLIC_KEY).')
+      hints.push('User must be the Snowflake login name that owns the registered public key — not a password.')
+    }
+    if (detail.includes('passphrase') || detail.includes('decrypt') || detail.includes('deserialize') || detail.includes('pem')) {
+      hints.push('If the PEM is encrypted, enter the passphrase; leave it blank for unencrypted keys.')
+    }
+  } else if (!isSso) {
     if (!sf.password?.trim() || String(sf.password).includes('***')) {
       hints.push('Provide your Snowflake password — masked values (with ***) are not re-sent when you save.')
     }
@@ -112,9 +124,11 @@ function formatNotice(service, inputs) {
   const hintBlock = hints.map((h) => `• ${h}`).join('\n')
   const authNote = service.auth_mode === 'sso'
     ? 'Auth: SSO (no password used)\n\n'
-    : service.auth_mode === 'password'
-      ? 'Auth: Password\n\n'
-      : ''
+    : service.auth_mode === 'keypair'
+      ? 'Auth: Key pair (JWT)\n\n'
+      : service.auth_mode === 'password'
+        ? 'Auth: Password\n\n'
+        : ''
   const reason = service.detail || service.raw_error || 'Connection test failed.'
   return (
     `${service.name} is ${statusLabel}.\n\n` +

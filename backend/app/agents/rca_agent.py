@@ -1121,11 +1121,34 @@ class RCAAgent(BaseAgent):
     def analyze(self, pipeline_id: str, extra_context: Optional[str] = None,
                 date_from: Optional[str] = None, date_to: Optional[str] = None,
                 *, include_narrative: bool = False) -> Dict[str, Any]:
+        # #region agent log
+        import time as _dbg_time
+        from pathlib import Path as _DbgP
+        _dbg_t0 = _dbg_time.perf_counter()
+        # #endregion
         if pipeline_id.startswith("dq_"):
-            return self.analyze_dq(
+            result = self.analyze_dq(
                 pipeline_id, extra_context,
                 date_from=date_from, date_to=date_to,
                 include_narrative=include_narrative)
+            # #region agent log
+            try:
+                _DbgP(__file__).resolve().parents[3].joinpath("debug-938378.log").open(
+                    "a", encoding="utf-8"
+                ).write(json.dumps({
+                    "sessionId": "938378", "hypothesisId": "E",
+                    "location": "rca_agent.py:analyze",
+                    "message": "analyze_dispatch_dq",
+                    "data": {
+                        "pipeline_id": pipeline_id,
+                        "elapsed_ms": round((_dbg_time.perf_counter() - _dbg_t0) * 1000, 1),
+                    },
+                    "timestamp": int(_dbg_time.time() * 1000),
+                }) + "\n")
+            except Exception:
+                pass
+            # #endregion
+            return result
 
         journey: List[Dict[str, str]] = []
         structured_evidence: List[Dict[str, Any]] = []
@@ -1134,6 +1157,24 @@ class RCAAgent(BaseAgent):
         lineage = LineageService()
         pipelines = [lineage.enrich_pipeline(p)
                      for p in _collect_pipelines_for_rca(pipeline_id, date_from, date_to)]
+        # #region agent log
+        try:
+            _DbgP(__file__).resolve().parents[3].joinpath("debug-938378.log").open(
+                "a", encoding="utf-8"
+            ).write(json.dumps({
+                "sessionId": "938378", "hypothesisId": "C",
+                "location": "rca_agent.py:analyze",
+                "message": "task_rca_after_collect",
+                "data": {
+                    "pipeline_id": pipeline_id,
+                    "pipelines_n": len(pipelines),
+                    "elapsed_ms": round((_dbg_time.perf_counter() - _dbg_t0) * 1000, 1),
+                },
+                "timestamp": int(_dbg_time.time() * 1000),
+            }) + "\n")
+        except Exception:
+            pass
+        # #endregion
         idx = {p["id"]: p for p in pipelines}
         target = idx.get(pipeline_id)
         if not target:
@@ -1563,12 +1604,37 @@ class RCAAgent(BaseAgent):
     def analyze_dq(self, check_id: str, extra_context: Optional[str] = None,
                    date_from: Optional[str] = None, date_to: Optional[str] = None,
                    *, include_narrative: bool = False) -> Dict[str, Any]:
+        # #region agent log
+        import time as _dbg_time
+        from pathlib import Path as _DbgP
+        _dbg_t0 = _dbg_time.perf_counter()
+        _dbg_marks: Dict[str, Any] = {}
+
+        def _dbg_mark(name: str) -> None:
+            _dbg_marks[name] = round((_dbg_time.perf_counter() - _dbg_t0) * 1000, 1)
+        # #endregion
         journey: List[Dict[str, str]] = []
         structured_evidence: List[Dict[str, Any]] = []
 
         lineage = LineageService()
         df, dt = _normalize_rca_dates(date_from, date_to)
-        all_checks = DQConnector().read_results(df, dt)
+        # RCA only needs one check row. Do NOT revalidate the whole failure set here —
+        # read_results(revalidate=True) re-runs up to 8 DQ SQLs and was ~74s of /api/rca.
+        # Live verdict for THIS check is done once below via execute_dq_rule.
+        from app.connectors.dq_connector import get_cached_summary
+        cached = get_cached_summary(df, dt)
+        if cached and (cached.get("all_checks") or cached.get("checks")):
+            all_checks = list(cached.get("all_checks") or cached.get("checks") or [])
+            # #region agent log
+            _dbg_mark("read_results_ms")
+            _dbg_marks["read_results_source"] = "summary_cache"
+            # #endregion
+        else:
+            all_checks = DQConnector().read_results(df, dt, revalidate=False)
+            # #region agent log
+            _dbg_mark("read_results_ms")
+            _dbg_marks["read_results_source"] = "snowflake_no_revalidate"
+            # #endregion
         check = next((c for c in all_checks if c["id"] == check_id), None)
         if not check:
             return {"error": f"DQ check {check_id} not found"}
@@ -1577,7 +1643,10 @@ class RCAAgent(BaseAgent):
         journey.append({"step": "Failure detected", "status": "done",
                         "detail": f"DQ check '{check.get('name')}' — status {check.get('status')}"})
 
-        pipelines = [lineage.enrich_pipeline(p) for p in MonitoringAgent().collect()]
+        pipelines = [lineage.enrich_pipeline(p) for p in MonitoringAgent().collect(df, dt)]
+        # #region agent log
+        _dbg_mark("collect_enrich_ms")
+        # #endregion
         idx = {p["id"]: p for p in pipelines}
         run_by_key = index_runs_by_task_key(pipelines)
         graph = lineage.load_task_graph()
@@ -1684,8 +1753,15 @@ class RCAAgent(BaseAgent):
         seed_tables = list(check_tables) or all_resolved_tables
         if not seed_tables and check.get("table_name"):
             seed_tables = lineage.resolve_dq_tables(check)
+        # #region agent log
+        _t_down = _dbg_time.perf_counter()
+        # #endregion
         downstream_map = lineage.discover_all_downstream(
             seed_tables[:3] or all_resolved_tables, context_database=ctx_db, context_schema=ctx_schema)
+        # #region agent log
+        _dbg_marks["discover_downstream_ms"] = round((_dbg_time.perf_counter() - _t_down) * 1000, 1)
+        _dbg_mark("after_downstream_ms")
+        # #endregion
         table_lineage = lineage.enrich_table_lineage_with_downstream(table_lineage, downstream_map)
 
         dq_io_keys = {root_key_task} if root_task else None
@@ -1781,13 +1857,26 @@ class RCAAgent(BaseAgent):
 
         # ── DQ SQL deep-dive: fetch rule definition + EXECUTE it ────────────
         dq_conn = DQConnector()
+        # #region agent log
+        _t_rule = _dbg_time.perf_counter()
+        # #endregion
         dq_rule = dq_conn.fetch_dq_rule_sql(check.get("name") or "", subject_area=check.get("table_name"))
+        # #region agent log
+        _dbg_marks["fetch_rule_ms"] = round((_dbg_time.perf_counter() - _t_rule) * 1000, 1)
+        # #endregion
         dq_rule_sql = None
         dq_execution_result = None
         if dq_rule:
             dq_rule_sql = "\n".join(f"{k}: {v}" for k, v in dq_rule.items() if v)[:3000]
+            # #region agent log
+            _t_exec = _dbg_time.perf_counter()
+            # #endregion
             dq_execution_result = dq_conn.execute_dq_rule(
-                check.get("name") or "", subject_area=check.get("table_name"), limit=500)
+                check.get("name") or "", subject_area=check.get("table_name"),
+                limit=500, rule=dq_rule)
+            # #region agent log
+            _dbg_marks["execute_dq_rule_ms"] = round((_dbg_time.perf_counter() - _t_exec) * 1000, 1)
+            # #endregion
             row_count = dq_execution_result.get("row_count", 0) if dq_execution_result else 0
             journey.append({"step": "DQ rule SQL executed", "status": "done",
                             "detail": f"Rule fetched and executed — {row_count} row(s) returned"})
@@ -1802,27 +1891,24 @@ class RCAAgent(BaseAgent):
         recorded_status = check.get("status")
         # #region agent log
         try:
-            import time as _time
-            _er = (dq_execution_result or {})
-            open(r"C:\Users\EKGAH\Documents\project\ops-monitor\debug-605d47.log", "a", encoding="utf-8").write(
-                json.dumps({"sessionId": "605d47", "hypothesisId": "A,B,E", "runId": "post-fix",
-                            "location": "rca_agent.py:analyze_dq",
-                            "message": "DQ RCA live reconcile",
-                            "data": {"check_id": check_id, "name": check.get("name"),
-                                     "recorded_status": recorded_status,
-                                     "category_pre_llm": category,
-                                     "live_status": live_status,
-                                     "live_failing_count": live_failing_count,
-                                     "dq_currently_passing": dq_currently_passing,
-                                     "executed": bool(_er.get("executed")),
-                                     "exec_error": (_er.get("error") or "")[:300],
-                                     "row_count": _er.get("row_count"),
-                                     "sample_pairs": [
-                                         {str(k).upper(): v for k, v in (r or {}).items()
-                                          if str(k).upper() in ("SOURCE_CNT", "TARGET_CNT", "TABLE_NAME")}
-                                         for r in (_er.get("rows") or [])[:4]
-                                     ]},
-                            "timestamp": int(_time.time() * 1000)}) + "\n")
+            _DbgP(__file__).resolve().parents[3].joinpath("debug-938378.log").open(
+                "a", encoding="utf-8"
+            ).write(json.dumps({
+                "sessionId": "938378", "hypothesisId": "A,B,C,D",
+                "location": "rca_agent.py:analyze_dq",
+                "message": "dq_rca_stage_timings",
+                                "data": {
+                    "check_id": check_id,
+                    "name": check.get("name"),
+                    "marks": _dbg_marks,
+                    "total_so_far_ms": round((_dbg_time.perf_counter() - _dbg_t0) * 1000, 1),
+                    "live_status": live_status,
+                    "exec_error": ((dq_execution_result or {}).get("error") or "")[:200] or None,
+                    "row_count": (dq_execution_result or {}).get("row_count"),
+                    "runId": "post-fix",
+                },
+                "timestamp": int(_dbg_time.time() * 1000),
+            }) + "\n")
         except Exception:
             pass
         # #endregion
@@ -1928,6 +2014,9 @@ class RCAAgent(BaseAgent):
             summary += f" Note: {_operator_hint_text(extra_context)[:240] or extra_context[:240]}"
 
         # ── Fetch upstream procedure chain (2-3 levels) ──────────────────────
+        # #region agent log
+        _t_post = _dbg_time.perf_counter()
+        # #endregion
         procedure_chain: List[Dict[str, Any]] = []
         if root_task:
             rt_meta = graph.get(root_key_task, {})
@@ -1956,6 +2045,9 @@ class RCAAgent(BaseAgent):
                         f"{resolved_tables[0] if resolved_tables else 'failing table'}"
                     ),
                 })
+        # #region agent log
+        _dbg_marks["procedure_chain_ms"] = round((_dbg_time.perf_counter() - _t_post) * 1000, 1)
+        # #endregion
 
         # Rebuild table-centric lineage once rule SQL / writers are known (no root task).
         # Always refresh when we have tables or a writer chain so Workbench shows graphs.
@@ -1968,8 +2060,22 @@ class RCAAgent(BaseAgent):
                 final_tables = list(dict.fromkeys([*fqn_from_sql, *final_tables]))
                 check_tables = set(final_tables)
             if final_tables:
-                refreshed_down = lineage.discover_all_downstream(
-                    final_tables[:3], context_database=ctx_db, context_schema=ctx_schema)
+                # Skip a second INFORMATION_SCHEMA sweep when the earlier seed pass
+                # already covered the same FQNs (saves ~15–20s on /api/rca).
+                seed_set = {t.upper() for t in (seed_tables[:3] or all_resolved_tables or [])}
+                final_set = {t.upper() for t in final_tables[:3]}
+                if final_set and final_set <= seed_set and downstream_map:
+                    refreshed_down = downstream_map
+                else:
+                    # #region agent log
+                    _t_down2 = _dbg_time.perf_counter()
+                    # #endregion
+                    refreshed_down = lineage.discover_all_downstream(
+                        final_tables[:3], context_database=ctx_db, context_schema=ctx_schema)
+                    # #region agent log
+                    _dbg_marks["discover_downstream_2_ms"] = round(
+                        (_dbg_time.perf_counter() - _t_down2) * 1000, 1)
+                    # #endregion
                 if refreshed_down:
                     downstream_map = refreshed_down
                     downstream_consumers = {
@@ -2040,9 +2146,15 @@ class RCAAgent(BaseAgent):
         diagnostic_results = None
         failure_evidence = None
         if live_status == "FAILED":
+            # #region agent log
+            _t_ev = _dbg_time.perf_counter()
+            # #endregion
             failure_evidence, diag_warn = self._collect_dq_failure_evidence(
                 dq_conn, check, dq_rule, dq_execution_result, live_status,
                 allow_diagnostic_llm=False)
+            # #region agent log
+            _dbg_marks["failure_evidence_ms"] = round((_dbg_time.perf_counter() - _t_ev) * 1000, 1)
+            # #endregion
             if failure_evidence:
                 diagnostic_results = {
                     "diagnostic_sql": failure_evidence.get("diagnostic_sql"),
@@ -2078,6 +2190,9 @@ class RCAAgent(BaseAgent):
             for c in procedure_chain[:3]
         ] if procedure_chain else None
 
+        # #region agent log
+        _t_llm = _dbg_time.perf_counter()
+        # #endregion
         llm = self.think({
             "analysis_type": "dq_check",
             "qc_id": check.get("name"),
@@ -2128,9 +2243,17 @@ class RCAAgent(BaseAgent):
             "extra_context": extra_context,
             "operator_feedback": extra_context,
         }, max_tokens=4000)
+        # #region agent log
+        _dbg_marks["llm_think_ms"] = round((_dbg_time.perf_counter() - _t_llm) * 1000, 1)
+        # #endregion
 
         code_analysis: Dict[str, Any] = {
             "task_sql": dq_rule_sql,
+            # Raw SQL_CODE for Fix Before lock (dump above may truncate at 3000 chars).
+            "sql_code": (
+                str(dq_rule.get("SQL_CODE") or dq_rule.get("sql_code") or "")[:4000]
+                if dq_rule else None
+            ) or None,
             "procedure_io": None,
             "tables_inspected": list(check_tables)[:10],
             "llm_explanation": None,
@@ -2371,6 +2494,26 @@ class RCAAgent(BaseAgent):
             "severity": impact_assessment.get("business_severity"),
             "confidence": confidence,
         })
+        # #region agent log
+        try:
+            _DbgP(__file__).resolve().parents[3].joinpath("debug-938378.log").open(
+                "a", encoding="utf-8"
+            ).write(json.dumps({
+                "sessionId": "938378", "hypothesisId": "A,B,C,D,E",
+                "location": "rca_agent.py:analyze_dq:end",
+                "message": "dq_rca_total",
+                "data": {
+                    "check_id": check_id,
+                    "marks": _dbg_marks,
+                    "total_ms": round((_dbg_time.perf_counter() - _dbg_t0) * 1000, 1),
+                    "category": category,
+                    "live_status": live_status,
+                },
+                "timestamp": int(_dbg_time.time() * 1000),
+            }) + "\n")
+        except Exception:
+            pass
+        # #endregion
         return result
 
     def _refine(self, target, root, category, hint: str, idx, run_by_key) -> Optional[Dict[str, Any]]:

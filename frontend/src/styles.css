@@ -621,6 +621,40 @@ tr:hover td { background: var(--panel2); }
   gap: 12px;
 }
 .settings-status-msg { font-size: 13px; }
+
+.conn-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--overlay-bg);
+}
+.conn-modal {
+  width: min(440px, 100%);
+  margin: 0;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+}
+.conn-modal h3 { margin: 0 0 8px; }
+.conn-modal-ok { border-color: rgba(46, 204, 113, 0.45); }
+.conn-modal-err { border-color: rgba(255, 92, 108, 0.45); }
+.conn-modal-msg { margin: 0 0 12px; font-size: 13px; line-height: 1.45; color: var(--text); }
+.conn-modal-lines,
+.conn-modal-hints {
+  margin: 0 0 14px;
+  padding-left: 18px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.conn-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 8px;
+}
 .settings-footnote { margin: 0; font-size: 12px; width: 100%; }
 @media (max-width: 900px) {
   .settings-split, .grid2 { grid-template-columns: 1fr; }

@@ -14,8 +14,10 @@ class AWSCreds(BaseModel):
 class SnowflakeCreds(BaseModel):
     account: str = ""
     user: str = ""
-    authenticator: str = "password"  # password | sso | externalbrowser | IdP URL
+    authenticator: str = "password"  # password | sso | externalbrowser | IdP URL | keypair
     password: str = ""
+    private_key_pem: str = ""
+    private_key_passphrase: str = ""
     warehouse: str = ""
     role: str = ""
     database: str = ""
@@ -44,6 +46,17 @@ class SettingsPayload(BaseModel):
     aws: AWSCreds
     snowflake: SnowflakeCreds
     monitoring: MonitoringSettings = MonitoringSettings()
+    # When testing/saving, merge masked secrets from this profile (else active).
+    connection_id: Optional[str] = None
+
+
+class ConnectionUpsertPayload(BaseModel):
+    id: Optional[str] = None
+    name: str = "Untitled"
+    aws: AWSCreds
+    snowflake: SnowflakeCreds
+    monitoring: MonitoringSettings = MonitoringSettings()
+    activate: bool = True
 
 
 class Pipeline(BaseModel):
@@ -73,11 +86,6 @@ class FixRequest(BaseModel):
     incident_id: Optional[str] = None
     user_edit: Optional[str] = None            # interactive fix edit
     rca_context: Optional[Dict[str, Any]] = None  # slim RCA from Workbench (avoid re-run / context loss)
-
-
-class ValidateRequest(BaseModel):
-    pipeline_id: str
-    fix_id: Optional[str] = None
 
 
 class ChatRequest(BaseModel):

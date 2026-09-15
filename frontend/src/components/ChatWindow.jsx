@@ -22,7 +22,7 @@ function buildWelcome(context) {
         : ' No failed tasks in this range. Ask for a "task summary" or adjust filters.'
     }
   } else if (tab === 'workbench') {
-    intro += ' Use quick actions below for RCA, fixes, and validation on the selected pipeline.'
+    intro += ' Use quick actions below for RCA and fixes on the selected pipeline.'
   } else if (tab === 'settings') {
     intro += ' I can help with Snowflake/AWS connectivity and monitoring configuration.'
   } else {
@@ -44,7 +44,6 @@ function getQuickActions(context, activePipeline) {
       { label: 'Correct RCA', text: 'This RCA is not correct, find the exact root cause' },
       { label: 'Resolution plan', text: 'Give me a resolution plan with RCA and suggested fix' },
       { label: 'Suggest fix', text: 'Suggest a fix for the selected failure' },
-      { label: 'Validate fix', text: 'Validate the fix on zero-copy clone' },
     ]
   }
 

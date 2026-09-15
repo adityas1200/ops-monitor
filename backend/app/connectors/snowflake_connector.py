@@ -1,13 +1,14 @@
-"""Snowflake connector — task history/graph, query history, zero-copy clone."""
+"""Snowflake connector — task history/graph, query history, guarded SQL execution."""
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from app.connectors.sql_guardrail import check_sql, classify_sql, log_sql, submit_for_approval
 from app.connectors.status import normalize_task_result
-from app.core.config import (get_task_monitoring_config, interpret_snowflake_error, is_sso_auth,
-                             load_settings, snowflake_configured)
+from app.core.config import (get_task_monitoring_config, interpret_snowflake_error, is_keypair_auth,
+                             is_sso_auth, load_settings, snowflake_auth_mode, snowflake_configured)
 
 
 def _iso_date(value: Optional[str], *, end_of_day: bool = False) -> Optional[str]:
@@ -37,10 +38,23 @@ _shared_conn = None
 _shared_conn_params_key: Optional[str] = None
 _shared_conn_warmed_at: Optional[float] = None
 _connect_lock = __import__("threading").Lock()
+_query_lock = __import__("threading").Lock()  # shared conn is not thread-safe
 _warm_lock = __import__("threading").Lock()
 _warm_inflight = None  # threading Event + result holder for single-flight warm
 _INFO_SCHEMA_LOOKBACK_DAYS = 14
-_TASK_HISTORY_RESULT_LIMIT = 1000
+# INFORMATION_SCHEMA.TASK_HISTORY applies RESULT_LIMIT before DATABASE_NAME/NAME
+# filters — 1000 account-wide rows routinely exceeded a 60s statement timeout.
+_TASK_HISTORY_RESULT_LIMIT = 200
+# Prefer ACCOUNT_USAGE for dashboard windows: WHERE DATABASE_NAME/NAME prune the
+# scan. INFORMATION_SCHEMA is kept only for near-term SCHEDULED (future) rows.
+_USE_ACCOUNT_USAGE_FOR_RECENT = True
+# Dashboard TASK_HISTORY must not sit for the full network_timeout (600s), but
+# prod ACCOUNT_USAGE windows often need more than 60s under warehouse load.
+# Override with env TASK_TELEMETRY_STATEMENT_TIMEOUT_S (seconds).
+_TELEMETRY_STATEMENT_TIMEOUT_S = max(
+    30,
+    int(__import__("os").getenv("TASK_TELEMETRY_STATEMENT_TIMEOUT_S", "180")),
+)
 # How long we treat an open backend session as "warm" without re-pinging Snowflake.
 _SESSION_TTL_S = 50 * 60
 # How often a warm session is health-checked with SELECT 1 (not full SSO).
@@ -49,7 +63,93 @@ _SESSION_PING_EVERY_S = 10 * 60
 
 def _params_cache_key(params: Dict[str, Any]) -> str:
     """Deterministic key from connection params to detect config changes."""
-    return "|".join(f"{k}={v}" for k, v in sorted(params.items()) if k != "login_timeout")
+    import hashlib
+    parts: List[str] = []
+    for k, v in sorted(params.items()):
+        if k == "login_timeout":
+            continue
+        if k == "private_key" and isinstance(v, (bytes, bytearray)):
+            digest = hashlib.sha256(bytes(v)).hexdigest()[:16]
+            parts.append(f"{k}=sha256:{digest}")
+        else:
+            parts.append(f"{k}={v}")
+    return "|".join(parts)
+
+
+def _normalize_pem_text(pem: str) -> str:
+    """Turn env-style single-line PEMs (literal \\n) into real multiline PEM text."""
+    text = (pem or "").strip().lstrip("\ufeff")
+    if not text:
+        return ""
+    # Common when pasting from .env / Secrets Manager / JSON: "\\n" as two chars.
+    if "\\n" in text or "\\r" in text:
+        text = text.replace("\\r\\n", "\n").replace("\\n", "\n").replace("\\r", "\n")
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    return text.strip()
+
+
+def sanitize_snowflake_account(account: str) -> str:
+    """Normalize account identifiers pasted from URLs or hostnames."""
+    a = (account or "").strip()
+    if not a:
+        return ""
+    lower = a.lower()
+    for prefix in ("https://", "http://"):
+        if lower.startswith(prefix):
+            a = a[len(prefix):]
+            lower = a.lower()
+            break
+    a = a.split("/")[0].strip()
+    lower = a.lower()
+    for host_suffix in (".snowflakecomputing.com", ".snowflakecomputing.cn"):
+        if lower.endswith(host_suffix):
+            a = a[: -len(host_suffix)]
+            break
+    return a.strip()
+
+
+def _load_private_key_obj(pem: str, passphrase: str = ""):
+    """Load a cryptography private key from PEM (handles literal \\n pastes)."""
+    from cryptography.hazmat.backends import default_backend
+    from cryptography.hazmat.primitives import serialization
+
+    raw = _normalize_pem_text(pem).encode("utf-8")
+    if not raw:
+        raise ValueError("Private key PEM is empty")
+    pwd = passphrase.encode("utf-8") if passphrase else None
+    try:
+        return serialization.load_pem_private_key(raw, password=pwd, backend=default_backend())
+    except TypeError as e:
+        raise ValueError(f"Could not load private key (check passphrase): {e}") from e
+    except Exception as e:  # noqa: BLE001
+        raise ValueError(f"Could not deserialize private key PEM: {e}") from e
+
+
+def _load_private_key_der(pem: str, passphrase: str = "") -> bytes:
+    """Convert PKCS#8 / traditional PEM private key to unencrypted DER for the Snowflake driver."""
+    from cryptography.hazmat.primitives import serialization
+
+    key = _load_private_key_obj(pem, passphrase)
+    return key.private_bytes(
+        encoding=serialization.Encoding.DER,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    )
+
+
+def snowflake_public_key_fingerprint(pem: str, passphrase: str = "") -> str:
+    """Return Snowflake-style SHA256 fingerprint for the public key of this private key."""
+    import base64
+    import hashlib
+    from cryptography.hazmat.primitives import serialization
+
+    key = _load_private_key_obj(pem, passphrase)
+    der = key.public_key().public_bytes(
+        encoding=serialization.Encoding.DER,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+    digest = hashlib.sha256(der).digest()
+    return "SHA256:" + base64.b64encode(digest).decode("ascii")
 
 
 def reset_shared_connection():
@@ -68,21 +168,21 @@ def reset_shared_connection():
 class SnowflakeConnector:
     last_error: Optional[str] = None
 
-    def __init__(self):
-        self.settings = load_settings()
+    def __init__(self, settings: Optional[Dict[str, Any]] = None):
+        self.settings = settings if settings is not None else load_settings()
         self._conn = None
 
     def _configured(self) -> bool:
         return snowflake_configured(self.settings.get("snowflake", {}))
 
     # ---- connectivity -------------------------------------------------
-    def health(self) -> List[Dict[str, Any]]:
+    def health(self, ephemeral: bool = False) -> List[Dict[str, Any]]:
         if not self._configured():
             return [{"name": "Snowflake", "status": "down", "latency_ms": None,
-                     "detail": "Not configured — account, warehouse, role, and password or SSO are required.",
+                     "detail": "Not configured — account, warehouse, role, and password / SSO / key-pair are required.",
                      "auth_mode": "unknown", "hints": []}]
         sf = self.settings["snowflake"]
-        auth_mode = "sso" if is_sso_auth(sf.get("authenticator", "password")) else "password"
+        auth_mode = snowflake_auth_mode(sf.get("authenticator", "password"))
         # Detect missing driver before attempting a connection so the error is never
         # misclassified as an auth/SSO failure.
         try:
@@ -102,11 +202,18 @@ class SnowflakeConnector:
                          "Then restart the backend and test connectivity again.",
                      ]}]
         try:
-            cur = self._connect().cursor()
-            cur.execute("SELECT CURRENT_VERSION()")
-            v = cur.fetchone()[0]
+            if ephemeral:
+                v = self._probe_version_ephemeral()
+            else:
+                cur = self._connect().cursor()
+                cur.execute("SELECT CURRENT_VERSION()")
+                v = cur.fetchone()[0]
             self.last_error = None
-            hint = ("SSO via browser." if auth_mode == "sso" else "Password auth.")
+            hint = {
+                "sso": "SSO via browser.",
+                "keypair": "Key-pair (JWT) auth.",
+                "password": "Password auth.",
+            }.get(auth_mode, f"{auth_mode} auth.")
             return [{"name": "Snowflake", "status": "connected", "latency_ms": None,
                      "detail": f"version {v}. {hint}", "auth_mode": auth_mode, "hints": []}]
         except Exception as e:  # noqa: BLE001
@@ -114,17 +221,58 @@ class SnowflakeConnector:
             self.last_error = err
             self._conn = None
             interpreted = interpret_snowflake_error(err, sf)
+            hints = list(interpreted["hints"] or [])
+            # Help operators match DESCRIBE USER → RSA_PUBLIC_KEY_FP to this private key.
+            if auth_mode == "keypair":
+                try:
+                    fp = snowflake_public_key_fingerprint(
+                        str(sf.get("private_key_pem") or ""),
+                        str(sf.get("private_key_passphrase") or ""),
+                    )
+                    hints.append(
+                        f"Fingerprint of the private key in Settings: {fp}. "
+                        "In Snowflake run DESCRIBE USER \"…\" and confirm RSA_PUBLIC_KEY_FP matches exactly."
+                    )
+                    hints.append(
+                        "If fingerprints differ, run ALTER USER … SET RSA_PUBLIC_KEY with the public key "
+                        "derived from this private key (same account you connect to)."
+                    )
+                except Exception as fp_exc:  # noqa: BLE001
+                    hints.append(
+                        f"Could not derive public-key fingerprint from the PEM/passphrase: {fp_exc}"
+                    )
             return [{"name": "Snowflake", "status": "down", "latency_ms": None,
                      "detail": interpreted["summary"],
                      "raw_error": interpreted["raw_error"],
                      "auth_mode": interpreted["auth_mode"],
-                     "hints": interpreted["hints"]}]
+                     "hints": hints}]
+
+    def _probe_version_ephemeral(self) -> str:
+        """One-off connect for Test — does not touch the shared session pool."""
+        import snowflake.connector as sf
+        params = self._connect_params()
+        params.setdefault("network_timeout", 600)
+        auth = str(params.get("authenticator") or "").lower()
+        if auth == "externalbrowser" or auth.startswith("http"):
+            params.setdefault("client_store_temporary_credential", True)
+        conn = None
+        try:
+            conn = sf.connect(**params)
+            cur = conn.cursor()
+            cur.execute("SELECT CURRENT_VERSION()")
+            return cur.fetchone()[0]
+        finally:
+            if conn is not None:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
 
     def _connect_params(self) -> Dict[str, Any]:
         sfc = self.settings["snowflake"]
         params: Dict[str, Any] = {
-            "account": sfc["account"].strip(),
-            "user": sfc["user"].strip(),
+            "account": sanitize_snowflake_account(sfc.get("account", "")),
+            "user": (sfc.get("user") or "").strip(),
             "warehouse": (sfc.get("warehouse") or "").strip() or None,
             "role": (sfc.get("role") or "").strip() or None,
         }
@@ -137,7 +285,13 @@ class SnowflakeConnector:
 
         auth = (sfc.get("authenticator") or "password").strip()
         auth_lower = auth.lower()
-        if auth_lower in ("sso", "externalbrowser"):
+        if is_keypair_auth(auth_lower):
+            pem = str(sfc.get("private_key_pem") or "")
+            passphrase = str(sfc.get("private_key_passphrase") or "")
+            params["private_key"] = _load_private_key_der(pem, passphrase)
+            # Explicit JWT auth avoids any leftover password authenticator defaults.
+            params["authenticator"] = "SNOWFLAKE_JWT"
+        elif auth_lower in ("sso", "externalbrowser"):
             params["authenticator"] = "externalbrowser"
             params["login_timeout"] = 120
         elif auth_lower not in ("password", "snowflake", ""):
@@ -148,7 +302,7 @@ class SnowflakeConnector:
         user = (sfc.get("user") or "").strip()
         if user:
             params["user"] = user
-        elif auth_lower in ("sso", "externalbrowser") or auth_lower.startswith("http"):
+        elif is_sso_auth(auth_lower):
             params.pop("user", None)
         return {k: v for k, v in params.items() if v is not None}
 
@@ -262,9 +416,10 @@ class SnowflakeConnector:
                 def _do_warm() -> None:
                     global _shared_conn_warmed_at, _warm_inflight
                     try:
-                        cur = self._connect().cursor()
-                        cur.execute("SELECT 1")
-                        cur.fetchone()
+                        with _query_lock:
+                            cur = self._connect().cursor()
+                            cur.execute("SELECT 1")
+                            cur.fetchone()
                         _shared_conn_warmed_at = _time.time()
                         box["result"] = {
                             **self.session_status(),
@@ -307,16 +462,17 @@ class SnowflakeConnector:
         name_pattern = task_cfg["name_pattern"]
         historical_months = task_cfg["historical_months"]
         future_days = task_cfg["future_days"]
+        monitor_wh = str(task_cfg.get("warehouse") or "").strip()
+        session_wh = str((self.settings.get("snowflake") or {}).get("warehouse") or "").strip()
         range_from, range_to = _default_task_date_range(future_days)
         if date_from:
             range_from = _iso_date(date_from) or range_from
         if date_to:
             range_to = _iso_date(date_to, end_of_day=True) or range_to
 
-        # INFORMATION_SCHEMA.TASK_HISTORY only covers ~7 days and is far faster than
-        # ACCOUNT_USAGE. Use it for recent dashboard ranges; fall back to ACCOUNT_USAGE
-        # only when the requested window is older. Always push the date filter into the
-        # source scan — never scan historical_months then filter afterward.
+        # Prefer ACCOUNT_USAGE with DATABASE_NAME/NAME pushdown for dashboard windows.
+        # INFORMATION_SCHEMA.TASK_HISTORY applies RESULT_LIMIT before those filters and
+        # was the dominant /api/summary cost (often 60s+ under warehouse overload).
         today = datetime.now(timezone.utc).date()
         try:
             from_d = datetime.fromisoformat(range_from).date()
@@ -324,8 +480,7 @@ class SnowflakeConnector:
         except ValueError:
             from_d, to_d = today - timedelta(days=7), today
         info_schema_floor = today - timedelta(days=_INFO_SCHEMA_LOOKBACK_DAYS)
-        use_fast_history = from_d >= info_schema_floor
-        include_future = to_d >= today
+        use_fast_history = (not _USE_ACCOUNT_USAGE_FOR_RECENT) and from_d >= info_schema_floor
 
         try:
             cur = self._connect().cursor()
@@ -333,40 +488,8 @@ class SnowflakeConnector:
                 # INFORMATION_SCHEMA.TASK_HISTORY rejects windows longer than 7 days.
                 hist_start = from_d.isoformat()
                 hist_end = min(to_d + timedelta(days=1), from_d + timedelta(days=7)).isoformat()
-                future_cte = ""
-                future_union = ""
-                params: list = [hist_start, hist_end, monitor_db, name_pattern, range_from, range_to]
-                if include_future:
-                    future_cte = f""",
-                FUTURE_TASKS AS (
-                    SELECT
-                        NAME AS TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE,
-                        CASE
-                            WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'
-                            WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'
-                            WHEN UPPER(STATE) IN ('RUNNING', 'EXECUTING') THEN 'RUNNING'
-                            WHEN UPPER(STATE) = 'SCHEDULED'            THEN 'SCHEDULED'
-                            ELSE 'OTHER'
-                        END AS TASK_RESULT,
-                        SCHEDULED_TIME, QUERY_START_TIME, COMPLETED_TIME,
-                        QUERY_ID, ERROR_CODE, ERROR_MESSAGE,
-                        'SCHEDULED' AS RECORD_TYPE,
-                        DATEDIFF('second', QUERY_START_TIME, COMPLETED_TIME) AS DURATION_S
-                    FROM TABLE(
-                        INFORMATION_SCHEMA.TASK_HISTORY(
-                            SCHEDULED_TIME_RANGE_START => CURRENT_TIMESTAMP(),
-                            SCHEDULED_TIME_RANGE_END   => DATEADD(DAY, {int(future_days)}, CURRENT_TIMESTAMP()),
-                            RESULT_LIMIT => 200
-                        )
-                    )
-                    WHERE STATE = 'SCHEDULED'
-                      AND DATABASE_NAME = %s
-                      AND NAME ILIKE %s
-                )"""
-                    future_union = "\n                    UNION ALL\n                    SELECT * FROM FUTURE_TASKS"
-                    params.extend([monitor_db, name_pattern])
+                params = (hist_start, hist_end, monitor_db, name_pattern, range_from, range_to)
                 sql = f"""
-                    WITH RECENT_TASKS AS (
                     SELECT
                         NAME              AS TASK_NAME,
                         DATABASE_NAME,
@@ -401,51 +524,11 @@ class SnowflakeConnector:
                       AND NAME ILIKE %s
                       AND SCHEDULED_TIME >= %s::TIMESTAMP_LTZ
                       AND SCHEDULED_TIME < DATEADD(DAY, 1, %s::DATE)
-                    ){future_cte}
-                    SELECT * FROM RECENT_TASKS{future_union}
                     ORDER BY TASK_NAME, SCHEDULED_TIME DESC
                 """
-                params = tuple(params)
             else:
-                future_cte = ""
-                future_union = ""
-                params = [range_from, range_to, monitor_db, name_pattern]
-                if include_future:
-                    future_cte = f""",
-                FUTURE_TASKS AS (
-                    SELECT
-                        NAME AS TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE, QUERY_ID,
-                        SCHEDULED_TIME, QUERY_START_TIME, COMPLETED_TIME,
-                        ERROR_CODE, ERROR_MESSAGE, 'SCHEDULED' AS RECORD_TYPE
-                    FROM TABLE(
-                        INFORMATION_SCHEMA.TASK_HISTORY(
-                            SCHEDULED_TIME_RANGE_START => CURRENT_TIMESTAMP(),
-                            SCHEDULED_TIME_RANGE_END   => DATEADD(DAY, {future_days}, CURRENT_TIMESTAMP()),
-                            RESULT_LIMIT => 200
-                        )
-                    )
-                    WHERE STATE = 'SCHEDULED'
-                      AND DATABASE_NAME = %s
-                      AND NAME ILIKE %s
-                      AND SCHEDULED_TIME < DATEADD(DAY, 1, %s::DATE)
-                )"""
-                    future_union = "\n                    UNION ALL\n                    SELECT * FROM FUTURE_TASKS"
-                    params.extend([monitor_db, name_pattern, range_to])
+                params = (range_from, range_to, monitor_db, name_pattern)
                 sql = f"""
-                WITH HISTORICAL_TASKS AS (
-                    SELECT
-                        NAME AS TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE, QUERY_ID,
-                        SCHEDULED_TIME, QUERY_START_TIME, COMPLETED_TIME,
-                        ERROR_CODE, ERROR_MESSAGE, 'HISTORICAL' AS RECORD_TYPE
-                    FROM SNOWFLAKE.ACCOUNT_USAGE.TASK_HISTORY
-                    WHERE SCHEDULED_TIME >= GREATEST(
-                            %s::TIMESTAMP_LTZ,
-                            DATEADD(MONTH, -{historical_months}, CURRENT_TIMESTAMP())
-                          )
-                      AND SCHEDULED_TIME < DATEADD(DAY, 1, %s::DATE)
-                      AND DATABASE_NAME = %s
-                      AND NAME ILIKE %s
-                ){future_cte}
                 SELECT
                     TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE,
                     CASE
@@ -459,14 +542,54 @@ class SnowflakeConnector:
                     QUERY_ID, ERROR_CODE, ERROR_MESSAGE, RECORD_TYPE,
                     DATEDIFF('second', QUERY_START_TIME, COMPLETED_TIME) AS DURATION_S
                 FROM (
-                    SELECT * FROM HISTORICAL_TASKS{future_union}
+                    SELECT
+                        NAME AS TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE, QUERY_ID,
+                        SCHEDULED_TIME, QUERY_START_TIME, COMPLETED_TIME,
+                        ERROR_CODE, ERROR_MESSAGE,
+                        CASE
+                            WHEN UPPER(STATE) = 'SCHEDULED' THEN 'SCHEDULED'
+                            ELSE 'HISTORICAL'
+                        END AS RECORD_TYPE
+                    FROM SNOWFLAKE.ACCOUNT_USAGE.TASK_HISTORY
+                    WHERE SCHEDULED_TIME >= GREATEST(
+                            %s::TIMESTAMP_LTZ,
+                            DATEADD(MONTH, -{historical_months}, CURRENT_TIMESTAMP())
+                          )
+                      AND SCHEDULED_TIME < DATEADD(DAY, 1, %s::DATE)
+                      AND DATABASE_NAME = %s
+                      AND NAME ILIKE %s
                 )
                 ORDER BY TASK_NAME, SCHEDULED_TIME DESC
                 """
-                params = tuple(params)
             log_sql(sql[:500], "monitoring:telemetry", "READ", allowed=True)
-            cur.execute(sql, params)
-            for row in cur.fetchall():
+            # Serialize: shared connection cannot run overlapping cursors.
+            with _query_lock:
+                cur.execute(
+                    f"ALTER SESSION SET STATEMENT_TIMEOUT_IN_SECONDS = {_TELEMETRY_STATEMENT_TIMEOUT_S}"
+                )
+                # Use configured monitor warehouse when it differs from the session WH.
+                switched_wh = False
+                if (
+                    monitor_wh
+                    and re.fullmatch(r"[A-Za-z][A-Za-z0-9_$]*", monitor_wh)
+                    and monitor_wh.upper() != session_wh.upper()
+                ):
+                    cur.execute(f"USE WAREHOUSE {monitor_wh}")
+                    switched_wh = True
+                try:
+                    cur.execute(sql, params)
+                    rows = cur.fetchall()
+                finally:
+                    if (
+                        switched_wh
+                        and session_wh
+                        and re.fullmatch(r"[A-Za-z][A-Za-z0-9_$]*", session_wh)
+                    ):
+                        try:
+                            cur.execute(f"USE WAREHOUSE {session_wh}")
+                        except Exception:
+                            pass
+            for row in rows:
                 (task_name, database_name, schema_name, state, task_result, scheduled_time,
                  query_start_time, completed_time, query_id, error_code, error_message,
                  record_type, duration_s) = row
@@ -505,13 +628,12 @@ class SnowflakeConnector:
 
     # ---- SQL execution with guardrails ---------------------------------
     def _allowed_write_databases(self) -> List[str]:
-        """Databases where DDL/DML is permitted (clones and preprod only)."""
+        """Databases where DDL/DML is permitted (preprod naming conventions only)."""
         sf = self.settings.get("snowflake", {})
         allowed = []
         preprod = (sf.get("preprod_account") or "").strip()
         if preprod:
             allowed.append(preprod)
-        # Clone databases created by the tool follow a naming convention
         allowed.append("CLONE_")
         allowed.append("_CLONE")
         allowed.append("_PREPROD")
@@ -557,20 +679,6 @@ class SnowflakeConnector:
             log_sql(sql, source, classification, allowed=True, result=f"ERROR: {str(e)[:200]}")
             return {"executed": False, "sql": sql, "error": str(e)}
 
-    # ---- zero-copy clone (Test agent) --------------------------------
-    def create_zero_copy_clone(self, database: str, clone_name: str,
-                               environment: str = "PREPROD") -> Dict[str, Any]:
-        ddl = f"CREATE OR REPLACE DATABASE {clone_name} CLONE {database};"
-        if not self._configured():
-            return {"executed": False, "error": "Snowflake not configured", "ddl": ddl, "clone_name": clone_name}
-        # Clone creation is allowed on preprod targets
-        result = self._execute_with_guardrail(ddl, source="test_agent:clone", allow_write=True)
-        if result["executed"]:
-            target = self.settings["snowflake"].get("preprod_account") or "current"
-            return {"executed": True, "ddl": ddl, "clone_name": clone_name,
-                    "environment": environment, "target_account": target}
-        return {"executed": False, "error": result.get("error", "Unknown"), "ddl": ddl, "clone_name": clone_name}
-
     def run_query(self, sql: str, source: str = "unknown",
                   allow_write: bool = False) -> Dict[str, Any]:
         """Execute a SQL query with guardrail protection.
@@ -579,11 +687,3 @@ class SnowflakeConnector:
         All queries are logged to the audit trail.
         """
         return self._execute_with_guardrail(sql, source=source, allow_write=allow_write)
-
-    def drop_clone(self, clone_name: str) -> Dict[str, Any]:
-        # Clone drops are allowed (they only affect clone databases)
-        return self._execute_with_guardrail(
-            f"DROP DATABASE IF EXISTS {clone_name};",
-            source="test_agent:drop_clone",
-            allow_write=True,
-        )

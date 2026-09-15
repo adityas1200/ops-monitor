@@ -11,14 +11,13 @@ const AWS_FIELDS = [
 
 const SF_REQUIRED = [
   ['account', 'Account', 'Snowflake account identifier (e.g. org-account.region)'],
-  ['user', 'User', 'Login name — required for password auth'],
+  ['user', 'User', 'Login name — required for password and key-pair auth'],
   ['warehouse', 'Warehouse', 'Warehouse used for monitoring queries'],
   ['role', 'Role', 'Role with access to ACCOUNT_USAGE and DQ tables'],
 ]
 const SF_OPTIONAL = [
   ['database', 'Default database', 'Optional session default'],
   ['schema', 'Default schema', 'Optional session default'],
-  ['preprod_account', 'Pre-prod account', 'Target for zero-copy clone validation'],
 ]
 
 const TASK_FIELDS = [
@@ -47,6 +46,7 @@ function resolveSfAuthMethod(authenticator) {
   const a = (authenticator || 'password').toLowerCase()
   if (a === 'externalbrowser' || a === 'sso') return 'sso'
   if (a.startsWith('http')) return 'sso'
+  if (a === 'keypair' || a === 'key_pair' || a === 'private_key' || a === 'snowflake_jwt') return 'keypair'
   return 'password'
 }
 
@@ -57,6 +57,30 @@ function resolveIdpUrl(authenticator) {
 
 function trimOrEmpty(v) {
   return (v ?? '').trim()
+}
+
+function isMaskedSecret(v) {
+  return String(v || '').includes('***')
+}
+
+function normalizePemPaste(raw) {
+  let text = String(raw || '')
+  if (text.includes('\\n') || text.includes('\\r')) {
+    text = text.replace(/\\r\\n/g, '\n').replace(/\\n/g, '\n').replace(/\\r/g, '\n')
+  }
+  return text
+}
+
+function onPrivateKeyPemChange(prevSf, nextRaw) {
+  const nextPem = normalizePemPaste(nextRaw)
+  const next = { ...prevSf, private_key_pem: nextPem }
+  // If replacing a masked key with a real PEM, force re-entry of passphrase for encrypted keys.
+  const wasMasked = isMaskedSecret(prevSf.private_key_pem)
+  const isReal = nextPem.includes('BEGIN') && !isMaskedSecret(nextPem)
+  if (wasMasked && isReal && isMaskedSecret(prevSf.private_key_passphrase)) {
+    next.private_key_passphrase = ''
+  }
+  return next
 }
 
 function mergeMonitoringDefaults(defaults, values) {
@@ -87,8 +111,8 @@ function resolveDq(dq) {
   }
 }
 
-function snowflakePayload(sf, sfAuthMethod, idpUrl, password) {
-  return {
+function snowflakePayload(sf, sfAuthMethod, idpUrl) {
+  const base = {
     account: trimOrEmpty(sf.account),
     user: trimOrEmpty(sf.user),
     warehouse: trimOrEmpty(sf.warehouse),
@@ -96,24 +120,57 @@ function snowflakePayload(sf, sfAuthMethod, idpUrl, password) {
     database: trimOrEmpty(sf.database),
     schema: trimOrEmpty(sf.schema),
     preprod_account: trimOrEmpty(sf.preprod_account),
-    authenticator: sfAuthMethod === 'sso' ? (trimOrEmpty(idpUrl) || 'sso') : 'password',
-    password: sfAuthMethod === 'sso' ? '' : trimOrEmpty(password),
+  }
+  if (sfAuthMethod === 'sso') {
+    return {
+      ...base,
+      authenticator: trimOrEmpty(idpUrl) || 'sso',
+      password: '',
+      private_key_pem: '',
+      private_key_passphrase: '',
+    }
+  }
+  if (sfAuthMethod === 'keypair') {
+    return {
+      ...base,
+      authenticator: 'keypair',
+      password: '',
+      private_key_pem: trimOrEmpty(sf.private_key_pem),
+      private_key_passphrase: trimOrEmpty(sf.private_key_passphrase),
+    }
+  }
+  return {
+    ...base,
+    authenticator: 'password',
+    password: trimOrEmpty(sf.password),
+    private_key_pem: '',
+    private_key_passphrase: '',
   }
 }
 
-function validateSnowflake(sf, sfAuthMethod, password) {
-  const configuring = ['account', 'user', 'warehouse', 'role', 'database', 'schema', 'preprod_account']
-    .some((k) => trimOrEmpty(sf[k]))
-  const passwordMasked = String(password || '').includes('***')
-  const hasPassword = trimOrEmpty(password) && !passwordMasked
-  if (!configuring && !hasPassword) return null
+function validateSnowflake(sf, sfAuthMethod) {
+  const configuring = [
+    'account', 'user', 'warehouse', 'role', 'database', 'schema', 'preprod_account',
+    'password', 'private_key_pem', 'private_key_passphrase',
+  ].some((k) => trimOrEmpty(sf[k]))
+  const passwordMasked = isMaskedSecret(sf.password)
+  const hasPassword = trimOrEmpty(sf.password) && !passwordMasked
+  const keyMasked = isMaskedSecret(sf.private_key_pem)
+  const hasKey = trimOrEmpty(sf.private_key_pem) && !keyMasked
+  if (!configuring && !hasPassword && !hasKey && !passwordMasked && !keyMasked) return null
 
   const missing = ['account', 'warehouse', 'role'].filter((k) => !trimOrEmpty(sf[k]))
   if (missing.length) return `Snowflake requires: ${missing.join(', ')}`
 
   if (sfAuthMethod === 'password') {
     if (!trimOrEmpty(sf.user)) return 'User is required for password login.'
-    if (!hasPassword && !passwordMasked) return 'Password is required for non-SSO login (or switch to SSO).'
+    if (!hasPassword && !passwordMasked) {
+      return 'Password is required for password login (or switch to SSO / key-pair).'
+    }
+  }
+  if (sfAuthMethod === 'keypair') {
+    if (!trimOrEmpty(sf.user)) return 'User is required for key-pair login.'
+    if (!hasKey && !keyMasked) return 'Private key PEM is required for key-pair login.'
   }
   return null
 }
@@ -166,6 +223,34 @@ function StatusPill({ name, status, detail }) {
   )
 }
 
+function buildSettingsPayload(aws, sf, sfAuthMethod, idpUrl, tasks, dq) {
+  return {
+    aws: {
+      region: trimOrEmpty(aws.region),
+      access_key_id: trimOrEmpty(aws.access_key_id),
+      secret_access_key: trimOrEmpty(aws.secret_access_key),
+      session_token: trimOrEmpty(aws.session_token),
+    },
+    snowflake: snowflakePayload(sf, sfAuthMethod, idpUrl),
+    monitoring: {
+      tasks: resolveTasks(tasks),
+      dq: resolveDq(dq),
+    },
+  }
+}
+
+function connSummaryLines(c) {
+  if (!c?.services?.length) return []
+  const want = []
+  if (c.platforms?.snowflake) want.push('Snowflake')
+  if (c.platforms?.aws) want.push('AWS STS')
+  // If nothing is marked configured, still show primary probes for the failure popup.
+  const names = want.length ? want : ['Snowflake', 'AWS STS']
+  return c.services
+    .filter((s) => names.includes(s.name))
+    .map((s) => `${s.name}: ${s.status}${s.detail ? ` — ${s.detail}` : ''}`)
+}
+
 export default function Settings({ onSaved, onReportError }) {
   const [section, setSection] = useState('connections')
   const [aws, setAws] = useState({})
@@ -179,30 +264,13 @@ export default function Settings({ onSaved, onReportError }) {
   const [connLoading, setConnLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [loaded, setLoaded] = useState(false)
-
-  const connectionInputs = () => ({
-    aws,
-    snowflake: snowflakePayload(sf, sfAuthMethod, idpUrl, sf.password),
-    sfAuthMethod,
-    idpUrl,
-  })
+  const [connModal, setConnModal] = useState(null)
 
   const reportConnIssues = (c, inputs) => {
     buildConnectionNotices(c, inputs).forEach((n) => {
       onReportError?.({ tab: 'Settings', action: 'test connection', error: n.text })
     })
   }
-
-  const checkConnectivity = useCallback((inputs = connectionInputs()) => {
-    setConnLoading(true)
-    return api.connectivity()
-      .then((c) => {
-        setConn(c)
-        reportConnIssues(c, inputs)
-        return c
-      })
-      .finally(() => setConnLoading(false))
-  }, [aws, sf, sfAuthMethod, idpUrl])
 
   const applySettings = useCallback((s) => {
     const snowflake = s.snowflake || {}
@@ -216,6 +284,8 @@ export default function Settings({ onSaved, onReportError }) {
       schema: snowflake.schema || '',
       preprod_account: snowflake.preprod_account || '',
       password: snowflake.password || '',
+      private_key_pem: snowflake.private_key_pem || '',
+      private_key_passphrase: snowflake.private_key_passphrase || '',
     })
     setSfAuthMethod(resolveSfAuthMethod(snowflake.authenticator))
     setIdpUrl(resolveIdpUrl(snowflake.authenticator))
@@ -249,42 +319,100 @@ export default function Settings({ onSaved, onReportError }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  const persistSettings = (payload, { fromModal = false } = {}) => {
+    setSaving(true)
+    return api.saveSettings(payload)
+      .then((r) => {
+        setStatus({
+          type: 'ok',
+          text: fromModal
+            ? 'Connections saved. Dashboard will use these credentials.'
+            : 'Saved. Refresh the Dashboard to load data with the new configuration.',
+        })
+        onSaved?.(r.platforms || {})
+        if (r.settings) applySettings(r.settings)
+        setConnModal(null)
+        return api.connectivity().then((c) => {
+          setConn(c)
+          return r
+        })
+      })
+      .catch((e) => {
+        setStatus({ type: 'error', text: e.message })
+        onReportError?.({ tab: 'Settings', action: 'save settings', error: e.message })
+        throw e
+      })
+      .finally(() => setSaving(false))
+  }
+
   const save = () => {
-    const sfErr = validateSnowflake(sf, sfAuthMethod, sf.password)
+    const sfErr = validateSnowflake(sf, sfAuthMethod)
     if (sfErr) {
       setStatus({ type: 'error', text: sfErr })
       onReportError?.({ tab: 'Settings', action: 'save settings', error: sfErr })
       return
     }
-    const snowflake = snowflakePayload(sf, sfAuthMethod, idpUrl, sf.password)
-    const monitoring = {
-      tasks: resolveTasks(tasks),
-      dq: resolveDq(dq),
-    }
-    const payload = {
-      aws: {
-        region: trimOrEmpty(aws.region),
-        access_key_id: trimOrEmpty(aws.access_key_id),
-        secret_access_key: trimOrEmpty(aws.secret_access_key),
-        session_token: trimOrEmpty(aws.session_token),
-      },
-      snowflake,
-      monitoring,
-    }
+    persistSettings(buildSettingsPayload(aws, sf, sfAuthMethod, idpUrl, tasks, dq))
+  }
 
-    setSaving(true)
-    api.saveSettings(payload)
-      .then((r) => {
-        setStatus({ type: 'ok', text: 'Saved. Connection test started — Dashboard will use the new monitoring targets.' })
-        onSaved?.(r.platforms || {})
-        if (r.settings) applySettings(r.settings)
-        return checkConnectivity({ aws: payload.aws, snowflake, sfAuthMethod, idpUrl })
+  const testConnections = () => {
+    const sfErr = validateSnowflake(sf, sfAuthMethod)
+    if (sfErr) {
+      setConnModal({
+        success: false,
+        title: 'Connection failed',
+        message: sfErr,
+        lines: [],
+      })
+      onReportError?.({ tab: 'Settings', action: 'test connection', error: sfErr })
+      return
+    }
+    const payload = buildSettingsPayload(aws, sf, sfAuthMethod, idpUrl, tasks, dq)
+    const inputs = {
+      aws: payload.aws,
+      snowflake: payload.snowflake,
+      sfAuthMethod,
+      idpUrl,
+    }
+    setConnLoading(true)
+    api.testConnectivity(payload)
+      .then((c) => {
+        setConn(c)
+        reportConnIssues(c, inputs)
+        const lines = connSummaryLines(c)
+        if (c.can_save) {
+          setConnModal({
+            success: true,
+            title: 'Connection successful',
+            message: 'Configured platforms connected. Save these settings if you want to keep them.',
+            lines,
+            payload,
+          })
+        } else {
+          const failed = (c.services || []).filter(
+            (s) => (s.name === 'Snowflake' || s.name === 'AWS STS') && s.status !== 'connected',
+          )
+          const detail = failed.map((s) => s.detail).filter(Boolean).join(' ')
+            || 'No configured platform connected successfully.'
+          setConnModal({
+            success: false,
+            title: 'Connection failed',
+            message: detail,
+            lines,
+            hints: failed.flatMap((s) => s.hints || []).slice(0, 4),
+          })
+        }
       })
       .catch((e) => {
-        setStatus({ type: 'error', text: e.message })
-        onReportError?.({ tab: 'Settings', action: 'save settings', error: e.message })
+        setConnModal({
+          success: false,
+          title: 'Connection failed',
+          message: e.message || 'Could not test connections.',
+          lines: [],
+        })
+        onReportError?.({ tab: 'Settings', action: 'test connection', error: e.message })
       })
-      .finally(() => setSaving(false))
+      .finally(() => setConnLoading(false))
   }
 
   const resetTasks = () => setTasks({ ...DEFAULT_TASKS })
@@ -309,8 +437,8 @@ export default function Settings({ onSaved, onReportError }) {
           <button
             type="button"
             className={`btn sec${connLoading ? ' is-loading' : ''}`}
-            disabled={connLoading}
-            onClick={() => checkConnectivity()}
+            disabled={connLoading || saving}
+            onClick={testConnections}
           >
             {connLoading ? 'Testing…' : 'Test connections'}
           </button>
@@ -381,6 +509,7 @@ export default function Settings({ onSaved, onReportError }) {
               <select value={sfAuthMethod} onChange={(e) => setSfAuthMethod(e.target.value)}>
                 <option value="password">Password (non-SSO)</option>
                 <option value="sso">SSO (browser)</option>
+                <option value="keypair">Key pair (JWT)</option>
               </select>
             </div>
 
@@ -394,7 +523,7 @@ export default function Settings({ onSaved, onReportError }) {
               />
             ))}
 
-            {sfAuthMethod === 'password' ? (
+            {sfAuthMethod === 'password' && (
               <ConfigField
                 label="Password"
                 hint="Leave blank on save to keep the existing password (masked values are not re-sent)."
@@ -402,7 +531,9 @@ export default function Settings({ onSaved, onReportError }) {
                 value={sf.password || ''}
                 onChange={(v) => setSf({ ...sf, password: v })}
               />
-            ) : (
+            )}
+
+            {sfAuthMethod === 'sso' && (
               <div className="field">
                 <label>IdP URL (optional)</label>
                 <input
@@ -415,6 +546,33 @@ export default function Settings({ onSaved, onReportError }) {
                   SSO opens a browser on the backend machine — complete sign-in within 2 minutes.
                 </span>
               </div>
+            )}
+
+            {sfAuthMethod === 'keypair' && (
+              <>
+                <div className="field">
+                  <label>Private key (PEM)</label>
+                  <textarea
+                    rows={6}
+                    spellCheck={false}
+                    placeholder={'-----BEGIN PRIVATE KEY-----\n…\n-----END PRIVATE KEY-----'}
+                    value={sf.private_key_pem || ''}
+                    onChange={(e) => setSf(onPrivateKeyPemChange(sf, e.target.value))}
+                  />
+                  <span className="field-hint">
+                    PKCS#8 PEM for the Snowflake user (BEGIN PRIVATE KEY / ENCRYPTED PRIVATE KEY).
+                    Single-line pastes with \n are accepted. Leave as *** on save to keep the stored key.
+                    Register the matching public key with ALTER USER … SET RSA_PUBLIC_KEY.
+                  </span>
+                </div>
+                <ConfigField
+                  label="Private key passphrase"
+                  hint="Only if the PEM is encrypted. Leave blank for unencrypted keys (or keep *** to retain)."
+                  type="password"
+                  value={sf.private_key_passphrase || ''}
+                  onChange={(v) => setSf({ ...sf, private_key_passphrase: v })}
+                />
+              </>
             )}
 
             {SF_REQUIRED.slice(2).map(([k, label, hint]) => (
@@ -509,7 +667,7 @@ export default function Settings({ onSaved, onReportError }) {
       )}
 
       <div className="card settings-actions">
-        <button type="button" className="btn" onClick={save} disabled={saving}>
+        <button type="button" className="btn" onClick={save} disabled={saving || connLoading}>
           {saving ? 'Saving…' : 'Save all settings'}
         </button>
         {status && (
@@ -518,9 +676,69 @@ export default function Settings({ onSaved, onReportError }) {
           </span>
         )}
         <p className="muted settings-footnote">
-          Saves connections and monitoring targets together. Refresh the Dashboard to load data with the new configuration.
+          Prefer <strong>Test connections</strong> first — on success you can save from the popup.
+          Save all still writes connections and monitoring targets together.
         </p>
       </div>
+
+      {connModal && (
+        <div
+          className="conn-modal-backdrop"
+          role="presentation"
+          onClick={() => !saving && setConnModal(null)}
+        >
+          <div
+            className={`conn-modal card${connModal.success ? ' conn-modal-ok' : ' conn-modal-err'}`}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="conn-modal-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 id="conn-modal-title">{connModal.title}</h3>
+            <p className="conn-modal-msg">{connModal.message}</p>
+            {connModal.lines?.length > 0 && (
+              <ul className="conn-modal-lines">
+                {connModal.lines.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            )}
+            {connModal.hints?.length > 0 && (
+              <ul className="conn-modal-hints">
+                {connModal.hints.map((h) => (
+                  <li key={h}>{h}</li>
+                ))}
+              </ul>
+            )}
+            <div className="conn-modal-actions">
+              {connModal.success ? (
+                <>
+                  <button
+                    type="button"
+                    className="btn sec"
+                    disabled={saving}
+                    onClick={() => setConnModal(null)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="btn"
+                    disabled={saving}
+                    onClick={() => persistSettings(connModal.payload, { fromModal: true })}
+                  >
+                    {saving ? 'Saving…' : 'Save connections'}
+                  </button>
+                </>
+              ) : (
+                <button type="button" className="btn" onClick={() => setConnModal(null)}>
+                  Close
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

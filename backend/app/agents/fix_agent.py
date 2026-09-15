@@ -365,7 +365,8 @@ def _artifact_from_rca(pipeline_id: str, rca: Dict[str, Any],
         # Fix Before must match Code Analysis: always prefer the DQ rule SQL_CODE.
         # Upstream procedure bodies are for permanent QUALIFY remediation, not Before.
         body = (
-            task_sql
+            _strip_narrative_from_sql(_rule_sql_from_rca(rca))
+            or task_sql
             or (rca.get("diagnostic_results") or {}).get("diagnostic_sql")
             or ""
         )
@@ -849,8 +850,26 @@ def _investigative_dq_after(
 
 
 def _rule_sql_from_rca(rca: Optional[Dict[str, Any]]) -> str:
+    """Prefer raw SQL_CODE field; fall back to extracting from the Code Analysis dump."""
     code = (rca or {}).get("code_analysis") or {}
+    raw = code.get("sql_code") or code.get("SQL_CODE")
+    if raw and _looks_like_sql(str(raw)):
+        return str(raw).strip()
     return _extract_sql_body(code.get("task_sql")) or ""
+
+
+def _canonical_dq_before(
+    artifact: Dict[str, str],
+    rca: Optional[Dict[str, Any]] = None,
+) -> str:
+    """Locked DQ Before = Code Analysis SQL_CODE body (never LLM-rewritten)."""
+    rule = _strip_narrative_from_sql(_rule_sql_from_rca(rca))
+    if rule and _looks_like_sql(rule):
+        return rule[:4000]
+    body = _strip_narrative_from_sql(artifact.get("body") or "")
+    if body and _looks_like_sql(body) and not _is_unavailable_artifact(body):
+        return body[:4000]
+    return body[:4000] if body else ""
 
 
 def _ensure_dq_sql_after(
@@ -1346,6 +1365,9 @@ class FixAgent(BaseAgent):
             f"addresses that finding\n"
             f"- before = focused failing SQL query ONLY (SELECT/INSERT/WITH…) — never full "
             f"Snowpark/Python procedure dumps\n"
+            f"- For DQ (artifact_source_kind=dq_rule): before MUST be a verbatim copy of the "
+            f"SQL_CODE body in artifact_sql — do not reformat, shorten, or rewrite before; "
+            f"only change after\n"
             f"- after = corrected or investigative SQL ONLY — pure SQL, no explanatory "
             f"comments, no RCA narrative, no -- Immediate/-- Permanent footers\n"
             f"- Put human explanation in rationale / validation_hints — NEVER inside after\n"
@@ -1466,16 +1488,26 @@ class FixAgent(BaseAgent):
                 llm_fix, artifact, allowed, seed=seed, rca=rca,
             )
 
+        # DQ Before is locked to Code Analysis SQL_CODE — LLM may only polish after.
+        dq_locked_before = (
+            _canonical_dq_before(artifact, rca)
+            if rca and _is_dq(pipeline_id, rca)
+            else ""
+        )
+
         if (
             llm_fix
             and not reject_reason
             and not _is_vague_after(
-                llm_fix.get("after"), llm_fix.get("before") or artifact.get("body")
+                llm_fix.get("after"),
+                dq_locked_before or llm_fix.get("before") or artifact.get("body"),
             )
         ):
             for k, v in llm_fix.items():
                 if v is not None:
                     proposal[k] = v
+            if dq_locked_before:
+                proposal["before"] = dq_locked_before
             grounding = "llm_polished"
         elif seed:
             # Prefer RCA-guided seed; never fall back to narrative comment After.
@@ -1553,6 +1585,9 @@ class FixAgent(BaseAgent):
         # Final contract: before/after are SQL only — never RCA comment dumps.
         proposal["before"] = _strip_narrative_from_sql(proposal.get("before"))
         proposal["after"] = _strip_narrative_from_sql(proposal.get("after"))
+        # Always re-lock DQ Before to SQL_CODE so LLM polish cannot diverge from Code Analysis.
+        if dq_locked_before:
+            proposal["before"] = dq_locked_before
         if _is_vague_after(proposal.get("after"), proposal.get("before")):
             if rca and _is_dq(pipeline_id, rca):
                 ensured_before, ensured_after = _ensure_dq_sql_after(
@@ -1562,6 +1597,8 @@ class FixAgent(BaseAgent):
                 )
                 if ensured_before:
                     proposal["before"] = ensured_before
+                if dq_locked_before:
+                    proposal["before"] = dq_locked_before
                 if ensured_after:
                     proposal["after"] = _strip_narrative_from_sql(ensured_after)
                     if grounding == "llm_polished":

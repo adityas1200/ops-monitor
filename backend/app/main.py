@@ -1,7 +1,8 @@
 """FastAPI backend for the agentic data-ops monitoring system."""
 from __future__ import annotations
+from copy import deepcopy
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, Optional
 import threading
 
 import json as _json
@@ -14,14 +15,15 @@ from fastapi.staticfiles import StaticFiles
 from app.agents.orchestrator import orchestrator
 from app.connectors.aws_connector import AWSConnector
 from app.connectors.snowflake_connector import SnowflakeConnector, reset_shared_connection
-from app.core.config import (AWS_OPTIONAL_FIELDS, SF_OPTIONAL_FIELDS, load_settings,
+from app.core.config import (AWS_OPTIONAL_FIELDS, SF_OPTIONAL_FIELDS, is_keypair_auth,
+                             is_sso_auth, load_settings,
                              masked_settings, normalize_monitoring_settings,
                              normalize_snowflake_auth, platforms_configured,
                              save_settings, validate_monitoring_settings,
                              validate_snowflake_settings)
 from app.memory.session_store import session_store
 from app.models.schemas import (ActivityErrorRequest, AddIssueRequest, ChatRequest,
-                                FixRequest, RCARequest, SettingsPayload, ValidateRequest)
+                                FixRequest, RCARequest, SettingsPayload)
 
 app = FastAPI(title="ops-monitor", version="1.0.0",
               description="Agentic data-ops monitoring for Snowflake + AWS")
@@ -75,10 +77,81 @@ def snowflake_session():
     return SnowflakeConnector().session_status()
 
 
+def merge_settings_payload(current: Dict[str, Any], new: Dict[str, Any]) -> Dict[str, Any]:
+    """Merge a SettingsPayload dump into current settings (keeps masked *** secrets)."""
+    merged = deepcopy(current)
+    optional = {"aws": AWS_OPTIONAL_FIELDS, "snowflake": SF_OPTIONAL_FIELDS}
+
+    for section in ("aws", "snowflake"):
+        for k, v in new[section].items():
+            if v is not None and "***" in str(v):
+                continue
+            if v == "" and k in optional[section]:
+                merged[section][k] = ""
+                continue
+            if v == "" and k == "password" and section == "snowflake":
+                auth = (new[section].get("authenticator") or "password").lower()
+                if (auth in ("sso", "externalbrowser", "keypair", "key_pair", "private_key")
+                        or auth.startswith("http")):
+                    merged[section][k] = ""
+                continue
+            if v == "" and k in ("private_key_pem", "private_key_passphrase") and section == "snowflake":
+                auth = (new[section].get("authenticator") or "password").lower()
+                # Switching away from key-pair: clear stored key material.
+                if is_sso_auth(auth) or auth in ("password", "snowflake", ""):
+                    merged[section][k] = ""
+                    continue
+                # Blank PEM while still on key-pair means "keep existing key".
+                if k == "private_key_pem" and is_keypair_auth(auth):
+                    continue
+                # Blank passphrase:
+                # - new real PEM pasted → treat as intentional blank (unencrypted key)
+                # - PEM masked/empty → keep existing passphrase (avoid wiping on unrelated saves)
+                if k == "private_key_passphrase" and is_keypair_auth(auth):
+                    new_pem = str(new[section].get("private_key_pem") or "")
+                    if new_pem and "***" not in new_pem:
+                        merged[section][k] = ""
+                    continue
+                continue
+            if v is not None:
+                merged[section][k] = v
+
+    # If login method changed, force secret exclusivity before normalize.
+    new_auth = (new.get("snowflake") or {}).get("authenticator")
+    if new_auth is not None and "***" not in str(new_auth):
+        merged.setdefault("snowflake", {})["authenticator"] = new_auth
+
+    merged["snowflake"] = normalize_snowflake_auth(merged.get("snowflake", {}))
+
+    if new.get("monitoring"):
+        merged["monitoring"] = normalize_monitoring_settings({
+            "tasks": {
+                **merged.get("monitoring", {}).get("tasks", {}),
+                **(new["monitoring"].get("tasks") or {}),
+            },
+            "dq": {
+                **merged.get("monitoring", {}).get("dq", {}),
+                **(new["monitoring"].get("dq") or {}),
+            },
+        })
+    return merged
+
+
 # ---- Connectivity -----------------------------------------------------
 @app.get("/api/connectivity")
 def connectivity():
+    """Probe already-saved settings (page-load / status)."""
     return orchestrator.check_connectivity()
+
+
+@app.post("/api/connectivity")
+def test_connectivity(payload: SettingsPayload):
+    """Probe form values without saving. Returns can_save for optional Save UI."""
+    merged = merge_settings_payload(load_settings(), payload.model_dump())
+    sf_errors = validate_snowflake_settings(merged.get("snowflake", {}))
+    if sf_errors:
+        raise HTTPException(status_code=400, detail="; ".join(sf_errors))
+    return orchestrator.check_connectivity(settings=merged, ephemeral=True)
 
 
 # ---- Settings ---------------------------------------------------------
@@ -89,38 +162,7 @@ def get_settings():
 
 @app.post("/api/settings")
 def update_settings(payload: SettingsPayload):
-    current = load_settings()
-    new = payload.model_dump()
-    optional = {"aws": AWS_OPTIONAL_FIELDS, "snowflake": SF_OPTIONAL_FIELDS}
-
-    for section in ("aws", "snowflake"):
-        for k, v in new[section].items():
-            if v is not None and "***" in str(v):
-                continue
-            if v == "" and k in optional[section]:
-                current[section][k] = ""
-                continue
-            if v == "" and k == "password" and section == "snowflake":
-                auth = (new[section].get("authenticator") or "password").lower()
-                if auth in ("sso", "externalbrowser") or auth.startswith("http"):
-                    current[section][k] = ""
-                continue
-            if v is not None:
-                current[section][k] = v
-
-    current["snowflake"] = normalize_snowflake_auth(current.get("snowflake", {}))
-
-    if new.get("monitoring"):
-        current["monitoring"] = normalize_monitoring_settings({
-            "tasks": {
-                **current.get("monitoring", {}).get("tasks", {}),
-                **(new["monitoring"].get("tasks") or {}),
-            },
-            "dq": {
-                **current.get("monitoring", {}).get("dq", {}),
-                **(new["monitoring"].get("dq") or {}),
-            },
-        })
+    current = merge_settings_payload(load_settings(), payload.model_dump())
 
     sf_errors = validate_snowflake_settings(current.get("snowflake", {}))
     if sf_errors:
@@ -180,9 +222,34 @@ def pipeline_logs(pipeline_id: str):
 # ---- RCA --------------------------------------------------------------
 @app.post("/api/rca")
 def rca(req: RCARequest):
-    return orchestrator.run_rca(
+    # #region agent log
+    import time as _dbg_time
+    from pathlib import Path as _P
+    _dbg_t0 = _dbg_time.perf_counter()
+    # #endregion
+    result = orchestrator.run_rca(
         req.pipeline_id, req.extra_context, date_from=req.date_from, date_to=req.date_to,
     )
+    # #region agent log
+    try:
+        _p = _P(__file__).resolve().parents[2] / "debug-938378.log"
+        with _p.open("a", encoding="utf-8") as _f:
+            _f.write(_json.dumps({
+                "sessionId": "938378", "hypothesisId": "E",
+                "location": "main.py:rca", "message": "rca_endpoint_total",
+                "data": {
+                    "elapsed_ms": round((_dbg_time.perf_counter() - _dbg_t0) * 1000, 1),
+                    "pipeline_id": req.pipeline_id,
+                    "is_dq": str(req.pipeline_id or "").startswith("dq_"),
+                    "has_error": bool((result or {}).get("error")),
+                    "category": (result or {}).get("category"),
+                },
+                "timestamp": int(_dbg_time.time() * 1000),
+            }) + "\n")
+    except Exception:
+        pass
+    # #endregion
+    return result
 
 
 # ---- RCA Knowledge Base -----------------------------------------------
@@ -244,12 +311,6 @@ def fix(req: FixRequest):
     return orchestrator.suggest_fix(
         req.pipeline_id, req.incident_id, req.user_edit, req.rca_context,
     )
-
-
-# ---- Validate (zero-copy clone + tests) ------------------------------
-@app.post("/api/validate")
-def validate(req: ValidateRequest):
-    return orchestrator.validate_fix(req.pipeline_id, req.fix_id)
 
 
 # ---- Auto remediate (end-to-end) -------------------------------------

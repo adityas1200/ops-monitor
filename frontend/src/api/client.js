@@ -149,6 +149,7 @@ export const api = {
   snowflakeSession: () => req('/snowflake/session'),
   health: () => req('/health'),
   connectivity: () => req('/connectivity'),
+  testConnectivity: (body) => req('/connectivity', { method: 'POST', body: JSON.stringify(body) }),
   getSettings: () => req('/settings'),
   saveSettings: (body) => req('/settings', { method: 'POST', body: JSON.stringify(body) }),
   summary: ({ status = 'FAILED', date_from, date_to } = {}) => {
@@ -171,8 +172,6 @@ export const api = {
     req('/rca', { method: 'POST', body: JSON.stringify({ pipeline_id, extra_context, date_from, date_to }) }),
   fix: (pipeline_id, user_edit, incident_id, rca_context) =>
     req('/fix', { method: 'POST', body: JSON.stringify({ pipeline_id, user_edit, incident_id, rca_context }) }),
-  validate: (pipeline_id, fix_id) =>
-    req('/validate', { method: 'POST', body: JSON.stringify({ pipeline_id, fix_id }) }),
   chat: (message, pipeline_id, context, session_id) =>
     req('/chat', { method: 'POST', body: JSON.stringify({ message, pipeline_id, context, session_id }) }),
   reportActivityError: (body) =>

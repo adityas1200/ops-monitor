@@ -15,8 +15,8 @@ _AWS_MAX_JOBS = 40
 class AWSConnector:
     last_error: Optional[str] = None
 
-    def __init__(self):
-        self.settings = load_settings()
+    def __init__(self, settings: Optional[Dict[str, Any]] = None):
+        self.settings = settings if settings is not None else load_settings()
         self._client_cache: Dict[str, Any] = {}
 
     def _configured(self) -> bool:

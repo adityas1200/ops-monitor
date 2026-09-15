@@ -1,0 +1,51 @@
+{
+  "family": "ops-monitor",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::ACCOUNT_ID:role/ops-monitor-prod-exec",
+  "taskRoleArn": "arn:aws:iam::ACCOUNT_ID:role/ops-monitor-prod-task",
+  "containerDefinitions": [
+    {
+      "name": "ops-monitor",
+      "image": "ACCOUNT_ID.dkr.ecr.REGION.amazonaws.com/ops-monitor:latest",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 8001,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        { "name": "PORT", "value": "8001" },
+        { "name": "CLAUDE_MODEL", "value": "claude-sonnet-4.5" },
+        { "name": "ANTHROPIC_BASE_URL", "value": "https://chat.int.bayer.com/anthropic" }
+      ],
+      "secrets": [
+        {
+          "name": "ANTHROPIC_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:ops-monitor/anthropic:ANTHROPIC_API_KEY::"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/ops-monitor-prod",
+          "awslogs-region": "REGION",
+          "awslogs-stream-prefix": "ops-monitor"
+        }
+      },
+      "healthCheck": {
+        "command": [
+          "CMD-SHELL",
+          "curl -fsS http://127.0.0.1:8001/api/health || exit 1"
+        ],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 40
+      }
+    }
+  ]
+}

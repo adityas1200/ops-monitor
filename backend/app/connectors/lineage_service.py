@@ -248,7 +248,8 @@ class LineageService:
 
     def failed_dq_checks(self, date_from: Optional[str] = None,
                            date_to: Optional[str] = None) -> List[Dict[str, Any]]:
-        checks = DQConnector().read_results(date_from, date_to)
+        # Correlation only needs recorded statuses — do not re-run every failing rule SQL.
+        checks = DQConnector().read_results(date_from, date_to, revalidate=False)
         failed = [c for c in checks if c.get("status") in ("FAILED", "WARNING", "DELAYED")]
         for c in failed:
             c["tables"] = self.resolve_dq_tables(c)

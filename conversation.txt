@@ -1,167 +1,107 @@
-The Backtracking RCA backend is now extracting DQ evidence better, but the RCA presentation and narrative still have generic issues.
+Data Quality Failure
+High (92%)
+Low
+INC-0128
+Failure
+DQ: 303 on Kerendia Validations
+Environment
+Production
+Detected
+2026-07-19 23:31:46
+Status
+FAILED
+Root Cause
+⊞
+ANLT_BASE_FACT_CUST_CALL_ACTY_ALIGNED contains 3,575 more distinct segmented Kerendia HCPs than 
+⊞
+DIM_TARGETS_HCP across all field forces. Specifically: FLD_FORCE_NM='CR1' shows 44,624 HCPs in L3 versus 42,071 in L2 (difference: 2,553); FLD_FORCE_NM='CR2' shows 30,393 versus 29,677 (difference: 716); FLD_FORCE_NM='CR4' shows 32,367 versus 32,082 (difference: 285); FLD_FORCE_NM='CR5' shows 21,772 versus 21,751 (difference: 21). All rows have non-null SEG_GRP_1_RPT_VAL in L3. The activity-aligned fact is capturing HCPs with segment assignments that are either missing from the targets dimension or present in the dimension without segmentation. This suggests the L3 activity data pipeline assigns segments to a broader HCP population than the L2 targeting process recognizes, or the L2 table has not been refreshed to include recent target list additions.
 
-Do not add logic for any specific DQ ID, table, column, dashboard, project, brand, source, or subject area.
+SEG_GRP_1_RPT_VAL IS NOT NULL
+Filter applied to both L3 and L2 CTEs
+FLD_FORCE_NM = FLD_FRC_ID
+Join condition between L3 and L2 — all 4 field forces matched successfully
+SUM(L3_TGT_CNT) = SUM(L2_TGT_CNT)
+Pass condition — fails because 129,156 != 125,581
+Expected:L3 activity fact and L2 targets dimension should contain identical counts of distinct segmented HCPs for each field force when filtered to Kerendia brand and non-null SEG_GRP_1_RPT_VAL
+Actual:L3 contains 129,156 distinct segmented HCPs vs L2's 125,581 — a surplus of 3,575 HCPs distributed across CR1 (+2,553), CR2 (+716), CR4 (+285), CR5 (+21)
+Impact Summary
+4 field forces affected with 3,575 HCPs showing segment misalignment between activity tracking and official targeting systems
 
-The fixes must be framework-level and work for any RCA.
+0
+Tables
+1
+Pipelines
+0
+Reports
+Low
+Severity
+AI Confidence
+92%
+High
+✓
+Error identified
+✗
+Related task correlated
+✓
+Lineage resolved
+✓
+DQ rule SQL analyzed
+✓
+Supporting evidence collected
+✗
+Impact path validated
+✓
+Prior case matched
+Identify & Suggest Fix
++ Add to Knowledge Base
+View Knowledge Base
+Code Analysis
+The DQ SQL is structurally sound and executes successfully. It builds two CTEs: L3_TARGET_CUST aggregates distinct {{code:CUST_HCP_ID}} from the activity fact where {{code:PROD_BRAND_NM = 'KERENDIA'}}, field force in ('CR1','CR2','CR4','CR5'), and {{code:SEG_GRP_1_RPT_VAL IS NOT NULL}}; L2_TARGET_CUST aggregates distinct {{code:BAYER_CUST_HCP_ID}} from the targets dimension with identical brand/field-force/segment filters. The main query joins the two CTEs on {{code:FLD_FORCE_NM = FLD_FRC_ID}} and returns 'Fail' when {{code:SUM(L3_TGT_CNT) != SUM(L2_TGT_CNT)}}. The logic correctly implements a cardinality reconciliation check. The failure is NOT a SQL defect — the query runs, joins all four field forces, and correctly computes the sum difference. The root cause is the DATA mismatch revealed by the diagnostic rows: every field force has more HCPs in L3 than L2.
 
-Problem:
-The UI/root-cause narrative still presents partial or inconclusive findings as if they are final root causes. Also, when generic templates are used, the expected/actual wording becomes vague and loses the semantic meaning of the DQ rule.
+QC_ID: 303
+DASHBOARD_NAME: Kerendia Segmentation QC Dashboard - Snowflake
+SUBJECT_AREA: Kerendia Validations
+QC_DESCRIPTION: Verify that all segments are correctly flowing from L2 to L3 Activity Aligned
+COUNTRY: US
+FREQUENCY: Weekly
+CHECK_TYPE: Count Checks
+SOURCE_TABLE: ANLT_BASE_FACT_CUST_CALL_ACT_ALIGNED
+METRIC: NA
+GRAIN_1: NA
+GRAIN_2: NA
+GRAIN_3: NA
+DATA_LAG: NA
+SQL_CODE: 
+WITH L3_TARGET_CUST AS ( SELECT FLD_FORCE_NM, COUNT(DISTINCT CUST_HCP_ID) AS L3_TGT_CNT FROM ANALYTICS_V2.ANLT_BASE_FACT_CUST_CALL_ACTY_ALIGNED WHERE PROD_BRAND_NM IN ('KERENDIA') AND FLD_FORCE_NM IN ('CR1','CR2','CR4','CR5') AND SEG_GRP_1_RPT_VAL IS NOT NULL GROUP BY ALL ), L2_TARGET_CUST AS ( SELECT DISTINCT FLD_FRC_ID, COUNT(DISTINCT BAYER_CUST_HCP_ID) AS L2_TGT_CNT FROM MODEL_V2.DIM_TARGETS_HCP WHERE PROD_BRAND_NM IN ('KERENDIA') AND FLD_FRC_ID IN ('CR1','CR2','CR4','CR5') AND SEG_GRP_1_RPT_VAL IS NOT NULL GROUP BY ALL ) SELECT CASE WHEN SUM(L3_TGT_CNT) = SUM(L2_TGT_CNT) THEN 'Pass' ELSE 'Fail' END AS RESULT FROM L3_TARGET_CUST A LEFT JOIN L2_TARGET_CUST B ON A.FLD_FORCE_NM=B.FLD_FRC_ID WHERE A.FLD_FORCE_NM IS NOT NULL ORDER BY 1;
 
-Required changes:
+LOWER_THRESHOLD: 0
+UPPER_THRESHOLD: 0
+WAREHOUSE: PROD_ETL_DAYLIGHT_WH_L
+SOURCE_CONFIG_TABLE: CPH_DB_PROD.MODEL_V2.CONFIG_KERENDIA
+Identified Fix · Run a reconciliation query to identify the 3,575 HCPs present in ANLT_BASE_FACT_CUST_CALL_ACTY_ALIGNED with non-null …
+Target: snowflake / 303
+Risk: medium
+Category: Data Quality Failure
+Evidence-seeded
+reused from memory
+{{table:ANLT_BASE_FACT_CUST_CALL_ACTY_ALIGNED}} contains 3,575 more distinct segmented Kerendia HCPs than {{table:DIM_TARGETS_HCP}} across all field forces. Specifically: {{code:FLD_FORCE_NM='CR1'}} shows 44,624 HCPs in L3 versus 42,071 in L2 (difference: 2,553); {{code:FLD_FORCE_NM='CR2'}} shows 30,393 versus 29,677 (difference: 716); {{code:FLD_FORCE_NM='CR4'}} shows 32,367 versus 32,082 (difference: 285); {{code:FLD_FORCE_NM='CR5'}} shows 21,772 versus 21,751 (difference: 21). All rows have non-null {{code:SEG_GRP_1_RPT_VAL}} in L3. The activity-aligned fact is capturing HCPs with segment assignments that are either missing from the targets dimension or present in the dimension without segmentation. This suggests the L3 activity data pipeline assigns segments to a broader HCP population than the L2 targeting process recognizes, or the L2 table has not been refreshed to include recent target list additions. Immediate (RCA): Run a reconciliation query to identify the 3,575 HCPs present in {{table:ANLT_BASE_FACT_CUST_CALL_ACTY_ALIGNED}} with non-null {{code:SEG_GRP_1_RPT_VAL}} but absent (or without segmentation) in {{table:DIM_TARGETS_HCP}}: {{code:SELECT L3.CUST_HCP_ID, L3.FLD_FO
 
-1. Surface backtracking_rca in the RCA output/UI
+Evidence: FLD_FRC_ID=CR2, L2_TGT_CNT=29677, L3_TGT_CNT=30393, L3_TGT_CNT=30393 vs L2_TGT_CNT=29677 (diff=716); FLD_FRC_ID=CR4, L2_TGT_CNT=32082, L3_TGT_CNT=32367, L3_TGT_CNT=32367 vs L2_TGT_CNT=32082 (diff=285); FLD_FRC_ID=CR5, L2_TGT_CNT=21751, L3_TGT_CNT=21772, L3_TGT_CNT=21772 vs L2_TGT_CNT=21751 (diff=21)
+FLD_FRC_ID=CR2, L2_TGT_CNT=29677, L3_TGT_CNT=30393, L3_TGT_CNT=30393 vs L2_TGT_CNT=29677 (diff=716)
+FLD_FRC_ID=CR4, L2_TGT_CNT=32082, L3_TGT_CNT=32367, L3_TGT_CNT=32367 vs L2_TGT_CNT=32082 (diff=285)
+FLD_FRC_ID=CR5, L2_TGT_CNT=21751, L3_TGT_CNT=21772, L3_TGT_CNT=21772 vs L2_TGT_CNT=21751 (diff=21)
+FLD_FRC_ID=CR1, L2_TGT_CNT=42071, L3_TGT_CNT=44624, L3_TGT_CNT=44624 vs L2_TGT_CNT=42071 (diff=2553)
+Before
+WITH L3_TARGET_CUST AS ( SELECT FLD_FORCE_NM, COUNT(DISTINCT CUST_HCP_ID) AS L3_TGT_CNT FROM ANALYTICS_V2.ANLT_BASE_FACT_CUST_CALL_ACTY_ALIGNED WHERE PROD_BRAND_NM IN ('KERENDIA') AND FLD_FORCE_NM IN ('CR1','CR2','CR4','CR5') AND SEG_GRP_1_RPT_VAL IS NOT NULL GROUP BY ALL ), L2_TARGET_CUST AS ( SELECT DISTINCT FLD_FRC_ID, COUNT(DISTINCT BAYER_CUST_HCP_ID) AS L2_TGT_CNT FROM MODEL_V2.DIM_TARGETS_HCP WHERE PROD_BRAND_NM IN ('KERENDIA') AND FLD_FRC_ID IN ('CR1','CR2','CR4','CR5') AND SEG_GRP_1_RPT_VAL IS NOT NULL GROUP BY ALL ) SELECT CASE WHEN SUM(L3_TGT_CNT) = SUM(L2_TGT_CNT) THEN 'Pass' ELSE 'Fail' END AS RESULT FROM L3_TARGET_CUST A LEFT JOIN L2_TARGET_CUST B ON A.FLD_FORCE_NM=B.FLD_FRC_ID WHERE A.FLD_FORCE_NM IS NOT NULL ORDER BY 1;
+After (proposed)
+WITH _dq_check AS (
+WITH L3_TARGET_CUST AS ( SELECT FLD_FORCE_NM, COUNT(DISTINCT CUST_HCP_ID) AS L3_TGT_CNT FROM ANALYTICS_V2.ANLT_BASE_FACT_CUST_CALL_ACTY_ALIGNED WHERE PROD_BRAND_NM IN ('KERENDIA') AND FLD_FORCE_NM IN ('CR1','CR2','CR4','CR5') AND SEG_GRP_1_RPT_VAL IS NOT NULL GROUP BY ALL ), L2_TARGET_CUST AS ( SELECT DISTINCT FLD_FRC_ID, COUNT(DISTINCT BAYER_CUST_HCP_ID) AS L2_TGT_CNT FROM MODEL_V2.DIM_TARGETS_HCP WHERE PROD_BRAND_NM IN ('KERENDIA') AND FLD_FRC_ID IN ('CR1','CR2','CR4','CR5') AND SEG_GRP_1_RPT_VAL IS NOT NULL GROUP BY ALL ) SELECT CASE WHEN SUM(L3_TGT_CNT) = SUM(L2_TGT_CNT) THEN 'Pass' ELSE 'Fail' END AS RESULT FROM L3_TARGET_CUST A LEFT JOIN L2_TARGET_CUST B ON A.FLD_FORCE_NM=B.FLD_FRC_ID WHERE A.FLD_FORCE_NM IS NOT NULL ORDER BY 1
+)
+SELECT * FROM _dq_check
+WHERE FLD_FRC_ID IN ('CR2', 'CR4', 'CR5', 'CR1');
+Rollback: Revert any SQL/config change; re-run RCA if findings change.
 
-If the RCA API response contains backtracking_rca, the Workbench/RCA view should show:
-
-- backtracking status
-- failure predicate
-- failed object
-- sample evidence
-- first breaking step, if available
-- culprit, if available
-- backtracking path
-- limitations
-- evidence queries, if safe to show
-
-If frontend changes are too large, at minimum ensure the backend response is included in the rendered RCA details.
-
-2. Separate confirmed evidence from root cause
-
-If backtracking_rca.status is COMPLETED:
-- Root Cause may use first_breaking_step and culprit as proven RCA.
-
-If backtracking_rca.status is PARTIAL, INCONCLUSIVE, or SKIPPED:
-- Do not present the upstream process, source, ETL, task, procedure, or transformation as proven root cause.
-- Present only confirmed facts as “Confirmed Finding.”
-- Present possible causes under “Hypothesis” or “Requires Further Investigation.”
-
-Example structure:
-
-Confirmed Finding:
-<evidence-backed issue>
-
-Backtracking Status:
-PARTIAL
-
-Proven So Far:
-<what evidence extraction confirmed>
-
-Not Yet Proven:
-<producer/step/source not resolved>
-
-Hypothesis:
-<possible causes, clearly labeled as hypotheses>
-
-3. Adjust confidence semantics
-
-Do not use one confidence value to imply the root cause is proven.
-
-Split or phrase confidence as:
-
-- Failure Evidence Confidence
-- Root Cause Trace Confidence
-
-If the DQ evidence is strong but backtracking is partial:
-- Evidence confidence can remain high.
-- Root cause trace confidence should be medium or low.
-
-4. Preserve semantic expected/actual wording
-
-Do not use vague generic wording such as:
-“Compared groups/keys should match or meet the check threshold.”
-
-Instead, generate expected/actual from the detected predicate and evidence.
-
-For grain violations:
-Expected should describe unique grain behavior.
-Actual should describe repeated key groups and observed counts.
-
-For count/reconciliation mismatches:
-Expected should describe matching counts or reconciled totals.
-Actual should describe observed mismatched counts and deltas.
-
-For null checks:
-Expected should describe required populated fields.
-Actual should describe null records found.
-
-For invalid values:
-Expected should describe allowed value domain.
-Actual should describe invalid values found.
-
-For data availability:
-Expected should describe required freshness or row presence.
-Actual should describe stale/missing/empty data.
-
-This must be generic and derived from predicate type, evidence columns, sample rows, and DQ metadata.
-
-5. Backtracking path must influence narrative
-
-If backtracking_path is empty but evidence was extracted, populate at least:
-- evidence extraction step
-- predicate classification step
-- producer resolution attempt
-- final limitation
-
-If producer was not resolved, the narrative must explicitly say:
-“Producer-level root cause was not proven because the table-producing object could not be resolved.”
-
-6. Do not overstate hypotheses
-
-Avoid wording like:
-“The ETL is creating the issue”
-unless backtracking proves the ETL/procedure/task/step introduced the failure.
-
-Use:
-“Possible causes include...”
-or
-“This remains a hypothesis until producer replay identifies the first breaking step.”
-
-7. Remediation must match RCA certainty
-
-If backtracking is PARTIAL, INCONCLUSIVE, or SKIPPED:
-- Recommend investigation and validation steps first.
-- Do not recommend direct corrective production DML as the immediate fix.
-- Any data modification must be marked as clone/pre-prod validation first and approval-required for production.
-
-8. Fix summary generation
-
-Summary should be evidence-specific but not overclaim root cause.
-
-Good summary pattern for partial RCA:
-“Validation failed because <confirmed evidence>. Backtracking extracted the failure evidence but did not yet resolve the producer or first breaking step.”
-
-Bad summary pattern:
-“Root cause is upstream ETL” when producer was not traced.
-
-9. Add tests
-
-Add generic tests for:
-
-A. PARTIAL backtracking does not produce final root-cause wording.
-
-B. COMPLETED backtracking uses first_breaking_step and culprit in root cause.
-
-C. Grain violation expected/actual wording uses full grain and observed counts.
-
-D. Count mismatch expected/actual wording uses compared counts and deltas.
-
-E. Null check expected/actual wording is not generic.
-
-F. Invalid value expected/actual wording is not generic.
-
-G. Backtracking limitations are displayed or included in RCA response.
-
-H. Production DML recommendations are not emitted as immediate fix when RCA is PARTIAL.
-
-I. Evidence confidence and root-cause trace confidence are separated or clearly worded.
-
-Acceptance criteria:
-- Generic implementation only.
-- No QC-specific logic.
-- No table-specific logic.
-- No column-specific logic.
-- RCA narrative distinguishes confirmed evidence from hypothesis.
-- PARTIAL/INCONCLUSIVE/SKIPPED backtracking cannot produce overconfident root cause statements.
-- Expected/actual text remains meaningful and predicate-aware.
-- Backtracking RCA details are visible or available in RCA output.
-- Existing tests continue passing.
+Validation hints:
+Confirm RCA immediate action: Run a reconciliation query to identify the 3,575 HCPs present in {{table:ANLT_BASE_FACT_CUST_CALL_ACTY_ALIGNED}} with non-null {{code:SEG_GRP_1_RPT_VAL}} but absent (or without segmentation) in {{tabl
+Add a trending chart tracking {{code:ABS(SUM(L3_TGT_CNT) - SUM(L2_TGT_CNT))}} over time (weekly cadence) to detect drift early. Set up alerts when the delta exceeds 2% of the L2 total or 2,500 HCPs (whichever is lower). Monitor the refresh
+Re-check named offenders from RCA evidence after applying the fix

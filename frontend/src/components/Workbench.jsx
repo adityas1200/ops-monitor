@@ -6,53 +6,9 @@ import RichRootCause from './RichRootCause'
 // Survive StrictMode remount so RCA is not double-fired in dev.
 const _rcaInflight = new Map()
 
-function TestSummary({ test }) {
-  const [open, setOpen] = useState(null)
-  const s = test.summary
-  return (
-    <div className="card">
-      <h3>Validation Test Summary · <span className="muted">{test.environment}</span></h3>
-      <div className="summary-bar">
-        <span className="pill">Clone: {test.clone_name}</span>
-        <span className="pill" style={{ color: '#2ecc71' }}>Passed {s.passed}</span>
-        <span className="pill" style={{ color: '#ff5c6c' }}>Failed {s.failed}</span>
-        <span className="pill">Skipped {s.skipped}</span>
-        <span className={`badge ${test.overall === 'PASS' ? 'SUCCESS' : 'FAILED'}`}>{test.overall}</span>
-      </div>
-      <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
-        Zero-copy clone DDL: <code>{test.clone_ddl}</code>
-      </div>
-      {test.cases.map((c) => (
-        <div key={c.id}>
-          <div className="test-row">
-            <div>
-              <strong>{c.id}</strong> · {c.name} <span className="pill">{c.type}</span>
-            </div>
-            <div className="row" style={{ alignItems: 'center' }}>
-              <span className={`badge ${c.status === 'PASS' ? 'SUCCESS' : c.status === 'FAIL' ? 'FAILED' : 'SKIPPED'}`}>{c.status}</span>
-              <button className="btn sec" onClick={() => setOpen(open === c.id ? null : c.id)}>
-                {open === c.id ? 'Hide' : 'View details'}
-              </button>
-            </div>
-          </div>
-          {open === c.id && (
-            <div className="test-detail">
-              <div><strong>SQL / step run:</strong><pre>{c.sql}</pre></div>
-              <div className="row">
-                <span className="pill">Expected: {c.expected}</span>
-                <span className="pill">Actual: {c.actual}</span>
-              </div>
-              <div style={{ marginTop: 6 }}><strong>Evidence:</strong> <span className="muted">{c.evidence}</span></div>
-            </div>
-          )}
-        </div>
-      ))}
-    </div>
-  )
-}
-
 function slimRcaContext(rca) {
   if (!rca) return null
+  const ca = rca.code_analysis
   return {
     incident_id: rca.incident_id,
     pipeline_id: rca.pipeline_id,
@@ -65,7 +21,15 @@ function slimRcaContext(rca) {
     root_cause: rca.root_cause,
     evidence: rca.evidence,
     remediation: rca.remediation,
-    code_analysis: rca.code_analysis,
+    code_analysis: ca
+      ? {
+          task_sql: ca.task_sql,
+          sql_code: ca.sql_code,
+          tables_inspected: ca.tables_inspected,
+          llm_explanation: ca.llm_explanation,
+          procedure_io: ca.procedure_io,
+        }
+      : ca,
     diagnostic_results: rca.diagnostic_results,
     dq_execution_result: rca.dq_execution_result,
     // Needed so Fix can emit before/after against real procedure DDL (not invent ETL).
@@ -74,7 +38,7 @@ function slimRcaContext(rca) {
   }
 }
 
-function FixDiff({ fix, onEdit, onValidate, busy }) {
+function FixDiff({ fix, onEdit, busy }) {
   const [edit, setEdit] = useState('')
   const groundingColor = {
     evidence_seeded: '#2ecc71',
@@ -150,8 +114,7 @@ function FixDiff({ fix, onEdit, onValidate, busy }) {
         <input type="text" placeholder="Modify the fix (e.g. use MEDIUM warehouse, coalesce to 0)"
           value={edit} onChange={(e) => setEdit(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && edit) { onEdit(edit); setEdit('') } }} />
-        <button className="btn sec" disabled={!edit} onClick={() => { onEdit(edit); setEdit('') }}>Modify</button>
-        <button className="btn warn" disabled={busy} onClick={onValidate}>Validate fix</button>
+        <button className="btn sec" disabled={!edit || busy} onClick={() => { onEdit(edit); setEdit('') }}>Modify</button>
       </div>
     </div>
   )
@@ -412,6 +375,12 @@ function RcaReport({
               background: 'var(--code-bg)', padding: 10, borderRadius: 6, maxHeight: 220, overflow: 'auto',
             }}>{rca.code_analysis.task_sql}</pre>
           )}
+          {!rca.code_analysis?.task_sql && rca.code_analysis?.sql_code && (
+            <pre style={{
+              fontSize: 11, lineHeight: 1.5, margin: '8px 0 0', whiteSpace: 'pre-wrap',
+              background: 'var(--code-bg)', padding: 10, borderRadius: 6, maxHeight: 220, overflow: 'auto',
+            }}>{rca.code_analysis.sql_code}</pre>
+          )}
         </div>
       )}
     </div>
@@ -481,7 +450,6 @@ export default function Workbench({
   const [selected, setSelected] = useState(activePipeline)
   const [rca, setRca] = useState(null)
   const [fix, setFix] = useState(null)
-  const [test, setTest] = useState(null)
   const [busy, setBusy] = useState('')
   const [hasActioned, setHasActioned] = useState(!!activePipeline)
   const [showKnowledgeForm, setShowKnowledgeForm] = useState(false)
@@ -521,7 +489,7 @@ export default function Workbench({
         .finally(() => { if (rcaTargetIdRef.current === id && epoch === rcaEpochRef.current) setBusy('') })
       return
     }
-    setBusy('rca'); setRca(null); setFix(null); setTest(null)
+    setBusy('rca'); setRca(null); setFix(null)
     onRcaChangeRef.current?.(null)
     const date_from = df ? `${df}T00:00:00+00:00` : undefined
     const date_to = dt ? `${dt}T23:59:59+00:00` : undefined
@@ -563,7 +531,6 @@ export default function Workbench({
     rcaTargetIdRef.current = activePipeline?.id || pid || rcaTargetIdRef.current
     setRca(externalRca.rca)
     setFix(null)
-    setTest(null)
     setHasActioned(true)
     setBusy('')
     onRcaChangeRef.current?.(externalRca.rca)
@@ -582,13 +549,6 @@ export default function Workbench({
     api.fix(selected.id, text, rca?.incident_id || ctx?.incident_id, ctx)
       .then(setFix)
       .catch((e) => reportApiError(onReportError, 'modify fix', e))
-      .finally(() => setBusy(''))
-  }
-  const validate = () => {
-    setBusy('test')
-    api.validate(selected.id, fix?.fix_id)
-      .then((r) => { if (r.error) throw new Error(r.error); setTest(r) })
-      .catch((e) => reportApiError(onReportError, 'validate fix', e))
       .finally(() => setBusy(''))
   }
 
@@ -633,9 +593,7 @@ export default function Workbench({
       )}
 
       {busy === 'fix' && <div className="card spinner">Fix agent working…</div>}
-      {fix && <FixDiff fix={fix} onEdit={editFix} onValidate={validate} busy={busy === 'test'} />}
-      {busy === 'test' && <div className="card spinner">Validation agent: cloning &amp; testing on pre-prod…</div>}
-      {test && <TestSummary test={test} />}
+      {fix && <FixDiff fix={fix} onEdit={editFix} busy={busy === 'fix'} />}
     </div>
   )
 }

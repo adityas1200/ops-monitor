@@ -6,7 +6,6 @@ from app.agents.base import BaseAgent
 from app.agents.fix_agent import FixAgent
 from app.agents.monitoring_agent import MonitoringAgent
 from app.agents.rca_agent import RCAAgent, _classify
-from app.agents.test_agent import TestAgent
 from app.core.config import (get_dq_monitoring_config, get_task_monitoring_config,
                              load_settings, platforms_configured)
 from app.memory.memory_store import incident_log
@@ -97,8 +96,6 @@ def _detect_intent(msg: str, context: Optional[Dict[str, Any]] = None) -> str:
     ctx = context or {}
     dash_view = (ctx.get("dashboard") or {}).get("view", "")
 
-    if any(k in m for k in ("validate", "run test", "test the fix", "zero copy", "clone")):
-        return "validate_fix"
     if any(k in m for k in ("modify fix", "change the fix", "use medium", "edit fix")) and "instead" in m:
         return "modify_fix"
 
@@ -235,7 +232,6 @@ class ChatAgent(BaseAgent):
             "failed_dq": "Be diagnostic. Explain which quality checks failed and their implications.",
             "resolution": "Be prescriptive. Give a clear step-by-step resolution path.",
             "explain_failure": "Be thorough but concise. Explain what happened and what it means.",
-            "validate_fix": "Be confirmatory. Summarize test results clearly.",
             "status": "Be brief. Lead with numbers and key insights.",
         }.get(intent, "Be helpful and conversational.")
 
@@ -324,7 +320,7 @@ class ChatAgent(BaseAgent):
         agent = "chat"
         reply = ""
 
-        needs_pipeline = intent in ("run_rca", "suggest_fix", "modify_fix", "validate_fix", "resolution", "explain_failure")
+        needs_pipeline = intent in ("run_rca", "suggest_fix", "modify_fix", "resolution", "explain_failure")
 
         if needs_pipeline and pipeline_id:
             if intent == "run_rca":
@@ -355,21 +351,13 @@ class ChatAgent(BaseAgent):
                     agent = "fix"
                     fallback = (f"Suggested fix: {payload['title']} (risk={payload['risk']}).\n"
                                 f"{payload.get('rationale', '')}\n\n"
-                                f"Open Workbench to review the before/after diff, or ask me to validate it.")
+                                f"Open Workbench to review the before/after diff.")
                 reply = self._generate_reply(intent, payload, message, context, history, fallback)
 
             elif intent == "modify_fix":
                 payload = FixAgent().suggest(pipeline_id, user_edit=message)
                 agent = "fix"
-                fallback = f"Applied your edit. Updated fix: {payload['title']}. Want me to validate it?"
-                reply = self._generate_reply(intent, payload, message, context, history, fallback)
-
-            elif intent == "validate_fix":
-                payload = TestAgent().validate(pipeline_id)
-                agent = "test"
-                s = payload["summary"]
-                fallback = (f"Validation on zero-copy clone {payload['clone_name']} ({payload['environment']}):\n"
-                            f"{s['passed']}/{s['total']} passed, overall {payload['overall']}.")
+                fallback = f"Applied your edit. Updated fix: {payload['title']}."
                 reply = self._generate_reply(intent, payload, message, context, history, fallback)
 
         elif intent == "failed_tasks":
@@ -461,7 +449,7 @@ class ChatAgent(BaseAgent):
         agent = "chat"
         fallback = ""
 
-        needs_pipeline = intent in ("run_rca", "suggest_fix", "modify_fix", "validate_fix", "resolution", "explain_failure")
+        needs_pipeline = intent in ("run_rca", "suggest_fix", "modify_fix", "resolution", "explain_failure")
 
         if needs_pipeline and pipeline_id:
             if intent == "run_rca":
@@ -491,11 +479,6 @@ class ChatAgent(BaseAgent):
                 payload = FixAgent().suggest(pipeline_id, user_edit=message)
                 agent = "fix"
                 fallback = f"Applied your edit. Updated fix: {payload['title']}."
-            elif intent == "validate_fix":
-                payload = TestAgent().validate(pipeline_id)
-                agent = "test"
-                s = payload["summary"]
-                fallback = f"Validation: {s['passed']}/{s['total']} passed, overall {payload['overall']}."
         elif intent == "failed_tasks":
             payload, fallback = self._failed_tasks_reply(context)
             agent = "monitoring"
@@ -581,7 +564,6 @@ class ChatAgent(BaseAgent):
             lines.append("\nNext steps:")
             lines.append("  • Ask for a 'resolution plan' or 'suggest fix'")
             lines.append("  • Open Workbench for lineage graph and fix diff")
-            lines.append("  • Say 'validate fix' after approving a change")
         if extra or refined:
             note = (payload.get("refinement") or {}).get("note") if isinstance(payload.get("refinement"), dict) else None
             lines.append("\nRe-ran RCA with your guidance. Workbench is updated with this report.")
@@ -749,7 +731,6 @@ class ChatAgent(BaseAgent):
                 lines.append(f"   • {h}")
         lines.append("\n4. Next steps")
         lines.append("   • Open Workbench to review the before/after diff")
-        lines.append("   • Ask 'validate fix' to test on a zero-copy Snowflake clone")
         lines.append("   • Say 'modify fix' with your edits if the suggestion needs tweaking")
         payload = {"rca": rca, "fix": fix}
         return "\n".join(lines), payload, "rca"
@@ -836,9 +817,14 @@ class ChatAgent(BaseAgent):
         if "400" in e or "required" in e or "missing" in e:
             steps += ["Check Settings for missing mandatory fields: Account, User, Warehouse, Role, and Password or SSO.",
                       "Optional fields (Database, Schema, Pre-prod Account) can be left blank."]
-        if "timeout" in e or "timed out" in e:
-            steps += ["The request timed out — retry in a moment.",
-                      "For SSO, ensure you complete browser sign-in within 2 minutes."]
+        if "timeout" in e or "timed out" in e or "000630" in e or "57014" in e:
+            steps += [
+                "The Snowflake query hit a statement/warehouse timeout — retry in a moment.",
+                "Narrow the Dashboard date range (e.g. last 2–7 days) and refresh.",
+                "In Settings, use a larger warehouse for task monitoring if available "
+                "(or set TASK_MONITOR_WAREHOUSE).",
+                "SSO browser sign-in is unrelated to this timeout unless connectivity itself is still failing.",
+            ]
         if "not found" in e or "404" in e:
             steps += ["The requested pipeline or resource may no longer exist — refresh the Dashboard.",
                       "Select a pipeline from the current list before running RCA or fix actions."]
@@ -847,8 +833,11 @@ class ChatAgent(BaseAgent):
                       "Verify credentials in Settings if you expected pipelines to appear.",
                       "Ask me about 'failed tasks' or 'failed DQ checks' for the current date range."]
         if "snowflake" in e or details.get("platform") == "snowflake":
-            steps += ["Verify Snowflake Account, User, Warehouse, and Role in Settings.",
-                      "For SSO: select SSO login method and ensure browser auth completes on the backend host."]
+            if "000630" not in e and "57014" not in e and "statement" not in e:
+                steps += ["Verify Snowflake Account, User, Warehouse, and Role in Settings.",
+                          "For SSO: select SSO login method and ensure browser auth completes on the backend host."]
+            else:
+                steps += ["Verify Warehouse size/availability in Settings (prod ACCOUNT_USAGE can be slow on a small WH)."]
         if "aws" in e or details.get("platform") == "aws":
             steps += ["Verify AWS Access Key ID, Secret Access Key, and Region in Settings."]
 
@@ -863,7 +852,7 @@ class ChatAgent(BaseAgent):
     def _no_pipeline_hint(self, intent: str, message: str,
                           context: Dict[str, Any]) -> str:
         action = {"run_rca": "run RCA", "suggest_fix": "suggest a fix",
-                  "modify_fix": "modify a fix", "validate_fix": "validate a fix",
+                  "modify_fix": "modify a fix",
                   "resolution": "build a resolution plan",
                   "explain_failure": "explain the failure"}.get(intent, "do that")
         dash = _dash(context)
@@ -932,7 +921,7 @@ class ChatAgent(BaseAgent):
             f"Here's what I can help with:\n\n"
             f"  • **Failed tasks** — find and investigate task failures with root cause analysis\n"
             f"  • **Data Quality** — check DQ failures, trace lineage, suggest fixes\n"
-            f"  • **Resolution** — end-to-end: RCA → Fix → Validate on zero-copy clone\n\n"
+            f"  • **Resolution** — RCA and suggested fix for the selected failure\n\n"
             f"Try asking: 'show failed tasks', 'failed DQ checks', or select a row from the Dashboard."
         )
 
@@ -951,7 +940,7 @@ class ChatAgent(BaseAgent):
             "  • Run RCA — root-cause analysis (select a task first)",
             "  • this RCA is not correct — re-run RCA with your guidance",
             "  • resolution plan — RCA + suggested fix",
-            "  • suggest fix / validate fix — in Workbench flow",
+            "  • suggest fix — in Workbench flow",
             "\nClick any table row to set context, then ask follow-up questions.",
         ]
         failed_t = len(dash.get("failedTasks") or [])

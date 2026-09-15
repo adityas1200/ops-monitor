@@ -5,6 +5,7 @@ pydantic==2.9.2
 
 # Snowflake connector (required for Snowflake live mode and health checks)
 snowflake-connector-python==4.6.0
+cryptography>=42.0.0
 
 # Live AWS connectors (optional — only needed in AWS live mode)
 boto3==1.35.24

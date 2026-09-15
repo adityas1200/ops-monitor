@@ -8,9 +8,9 @@ or category templates.
 ## Procedure
 1. Prefer `rca_context` from Workbench (do not discard RCA when `incident_id` is set).
 2. Build the artifact from **real** SQL only:
-   - DQ: prefer lineage `procedure_chain[].sql_body` (upstream load procedure) when present
-   - RCA resolves writer procedures from failing tables even when no related task failed
-   - Else DQ rule `SQL_CODE` / diagnostic SQL (before = current failing SQL)
+   - DQ **before** = Code Analysis `SQL_CODE` body only (locked; LLM must not rewrite/reformat it)
+   - Upstream `procedure_chain[].sql_body` is for permanent remediation / After, not Before
+   - Else diagnostic SQL when rule SQL is missing
    - Task: `code_analysis.task_sql` / procedure body
    - If none resolve → emit **Source SQL unavailable** (fail closed). Never invent ETL.
 3. Read RCA `remediation` (`immediate_fix`, `permanent_fix`, `monitoring_recommendation`),

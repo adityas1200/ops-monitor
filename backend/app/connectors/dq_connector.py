@@ -88,10 +88,22 @@ def write_full_summary_cache(
     date_from: Optional[str],
     date_to: Optional[str],
     response: Dict[str, Any],
-) -> str:
-    """Persist the full live DQ summary response for this date window. Returns updated_at ISO."""
+) -> Optional[str]:
+    """Persist the full live DQ summary for this date window.
+
+    Skips caching when the payload has connector errors (e.g. missing table /
+    auth failures) so a transient Snowflake failure is not sticky for the TTL.
+    Returns updated_at ISO, or None when nothing was written.
+    """
     import logging
     log = logging.getLogger(__name__)
+    if response.get("errors"):
+        log.info(
+            "DQ revalidate cache skip (errors present) key=%s errors=%s",
+            _cache_key(date_from, date_to),
+            len(response.get("errors") or []),
+        )
+        return None
     updated_at = datetime.now(timezone.utc).isoformat()
     key = _cache_key(date_from, date_to)
     payload = dict(response)
@@ -154,6 +166,9 @@ def get_cached_summary(
     response = entry.get("response")
     if not isinstance(response, dict) or not isinstance(response.get("all_checks"), list):
         return None
+    # Never serve a cached connector failure (table missing / not authorized, etc.).
+    if response.get("errors"):
+        return None
     out = dict(response)
     out["status_mode"] = "cached_live"
     out["revalidated"] = False
@@ -208,6 +223,16 @@ def normalize_dq_status(value: Any) -> str:
     return v or "RUNNING"
 
 
+# RUN_DATE historically used YYYYMMDD_HH24MISS; current loads use "YYYY-MM-DD HH24:MI:SS".
+_RUN_DATE_TS_SQL = (
+    "COALESCE("
+    "TRY_TO_TIMESTAMP(RUN_DATE, 'YYYYMMDD_HH24MISS'), "
+    "TRY_TO_TIMESTAMP(RUN_DATE, 'YYYY-MM-DD HH24:MI:SS'), "
+    "TRY_TO_TIMESTAMP(RUN_DATE)"
+    ")"
+)
+
+
 def _format_run_date(value: Any) -> Optional[str]:
     if value is None:
         return None
@@ -258,6 +283,36 @@ def _detail_text(description: Any, pass_count: Any, fail_count: Any) -> Optional
 # Cache of discovered candidate rules tables, keyed by "CATALOG.SCHEMA|require_sa".
 # Schemas rarely change, so a process-lifetime cache avoids repeat INFORMATION_SCHEMA scans.
 _RULES_TABLE_CACHE: Dict[str, List[str]] = {}
+# Cache resolved DQ rule rows — INFORMATION_SCHEMA + multi-table UNION can take >100s.
+_RULE_ROW_CACHE: Dict[str, Optional[Dict[str, Any]]] = {}
+_RULE_ROW_CACHE_LOCK = threading.Lock()
+_RULE_ROW_CACHE_TTL_S = 30 * 60
+_RULE_ROW_CACHE_TS: Dict[str, float] = {}
+
+
+def _rule_cache_key(qc_id: str, subject_area: Optional[str]) -> str:
+    return f"{qc_id}|{(subject_area or '').strip().upper()}"
+
+
+def _subject_config_guesses(catalog: str, schema: str, subject_area: str) -> List[str]:
+    """Likely CONFIG_* table FQNs for a subject area (avoid full-schema UNION)."""
+    raw = (subject_area or "").strip().upper()
+    if not raw:
+        return []
+    alnum = re.sub(r"[^A-Z0-9]+", "_", raw).strip("_")
+    nospace = re.sub(r"[^A-Z0-9]", "", raw)
+    guesses = []
+    for token in (alnum, nospace, raw.replace(" ", "_")):
+        if token:
+            guesses.append(f"{catalog}.{schema}.CONFIG_{token}")
+    # Deduce.
+    seen = set()
+    out: List[str] = []
+    for g in guesses:
+        if g not in seen:
+            seen.add(g)
+            out.append(g)
+    return out
 
 
 class DQConnector:
@@ -298,21 +353,21 @@ class DQConnector:
             """
             params: List[Any] = []
             if date_from:
-                sql += " AND TRY_TO_TIMESTAMP(RUN_DATE, 'YYYYMMDD_HH24MISS') >= %s::TIMESTAMP_LTZ"
+                sql += f" AND {_RUN_DATE_TS_SQL} >= %s::TIMESTAMP_LTZ"
                 params.append(date_from)
             if date_to:
-                sql += " AND TRY_TO_TIMESTAMP(RUN_DATE, 'YYYYMMDD_HH24MISS') <= %s::TIMESTAMP_LTZ"
+                sql += f" AND {_RUN_DATE_TS_SQL} <= %s::TIMESTAMP_LTZ"
                 params.append(date_to)
             if latest_only:
                 # One row per QC + subject area (newest RUN_DATE wins).
-                sql += """
+                sql += f"""
                 QUALIFY ROW_NUMBER() OVER (
                     PARTITION BY QC_ID, COALESCE(TO_VARCHAR(SUBJECT_AREA), '')
-                    ORDER BY TRY_TO_TIMESTAMP(RUN_DATE, 'YYYYMMDD_HH24MISS') DESC NULLS LAST
+                    ORDER BY {_RUN_DATE_TS_SQL} DESC NULLS LAST
                 ) = 1
                 """
-            sql += """
-                ORDER BY TRY_TO_TIMESTAMP(RUN_DATE, 'YYYYMMDD_HH24MISS') DESC NULLS LAST
+            sql += f"""
+                ORDER BY {_RUN_DATE_TS_SQL} DESC NULLS LAST
                 LIMIT 500
             """
             log_sql(sql[:300], "dq_connector:read_results", "READ", allowed=True)
@@ -358,47 +413,82 @@ class DQConnector:
         """Fetch a DQ rule definition for a QC ID (+ Subject Area).
 
         Resolution order:
-          1. The configured rules table (fast path — preserves prior behaviour).
-          2. Every other config table in the same database/schema that exposes
-             QC_ID / SQL_CODE columns. Each subject area keeps its rules in its own
-             CONFIG_* table (e.g. CONFIG_LYNKUET, CONFIG_ALL_L2, ...), so this makes
-             the lookup work for any subject area without hand-editing settings.
+          1. In-process cache (same QC often fetched twice per RCA).
+          2. The configured rules table (fast path — preserves prior behaviour).
+          3. Subject-area CONFIG_* table name guesses (avoids a full-schema UNION).
+          4. Sibling config tables in the same DB.SCHEMA (INFORMATION_SCHEMA + UNION).
 
         Returns the best matching row (longest SQL_CODE that looks like a query),
         annotated with SOURCE_CONFIG_TABLE, or None if nothing matches anywhere.
         """
         if not self._configured():
             return None
+        cache_key = _rule_cache_key(str(qc_id), subject_area)
+        now = time.time()
+        with _RULE_ROW_CACHE_LOCK:
+            ts = _RULE_ROW_CACHE_TS.get(cache_key)
+            if ts is not None and now - ts < _RULE_ROW_CACHE_TTL_S and cache_key in _RULE_ROW_CACHE:
+                cached = _RULE_ROW_CACHE[cache_key]
+                return dict(cached) if cached else None
+
         dq_cfg = get_dq_monitoring_config(self.settings)
         rules_table = dq_cfg.get("rules_table_fqn", "")
+
+        def _store(rule: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+            with _RULE_ROW_CACHE_LOCK:
+                _RULE_ROW_CACHE[cache_key] = dict(rule) if rule else None
+                _RULE_ROW_CACHE_TS[cache_key] = time.time()
+            return dict(rule) if rule else None
 
         # 1. Try the configured table first.
         if rules_table:
             rule = self._fetch_rule_from_table(rules_table, qc_id, subject_area)
             if rule:
-                return rule
+                return _store(rule)
 
-        # 2. Fall back to searching sibling config tables in the same DB.SCHEMA.
         catalog, schema = self._rules_namespace(rules_table)
         if not (catalog and schema):
-            return None
+            return _store(None)
 
+        # 2. Cheap subject-area CONFIG_* guesses before scanning the whole schema.
+        if subject_area:
+            for guess in _subject_config_guesses(catalog, schema, subject_area):
+                rule = self._fetch_rule_from_table(guess, qc_id, subject_area)
+                if rule:
+                    return _store(rule)
+                # Also try QC-only on that table (SUBJECT_AREA column may differ).
+                rule = self._fetch_rule_from_table(guess, qc_id, None)
+                if rule:
+                    return _store(rule)
+
+        # 3. Fall back to searching sibling config tables in the same DB.SCHEMA.
         # Prefer a subject-area-scoped match (a QC_ID can be reused across brands);
         # only if that finds nothing do we fall back to matching QC_ID alone.
         search_modes = (True, False) if subject_area else (False,)
         for require_sa in search_modes:
             candidates = self._candidate_rules_tables(catalog, schema, require_sa)
             candidates = [t for t in candidates if t.upper() != (rules_table or "").upper()]
-            if not candidates:
+            if subject_area:
+                token = re.sub(r"[^A-Z0-9]+", "", subject_area.upper())
+                # Probe subject-named tables first (much cheaper than a fat UNION).
+                preferred = [t for t in candidates if token and token[:6] in t.upper().replace("_", "")]
+                other = [t for t in candidates if t not in preferred]
+                ordered = preferred + other
+            else:
+                ordered = candidates
+            if not ordered:
                 continue
-            found = self._locate_rule_table(
-                qc_id, subject_area if require_sa else None, candidates)
-            if found:
-                rule = self._fetch_rule_from_table(
-                    found, qc_id, subject_area if require_sa else None)
-                if rule:
-                    return rule
-        return None
+            # Cap UNION size — full-schema probes were ~118s on RCA.
+            for chunk_start in range(0, len(ordered), 6):
+                chunk = ordered[chunk_start:chunk_start + 6]
+                found = self._locate_rule_table(
+                    qc_id, subject_area if require_sa else None, chunk)
+                if found:
+                    rule = self._fetch_rule_from_table(
+                        found, qc_id, subject_area if require_sa else None)
+                    if rule:
+                        return _store(rule)
+        return _store(None)
 
     @staticmethod
     def _rules_namespace(rules_table_fqn: str) -> "tuple[Optional[str], Optional[str]]":
@@ -424,8 +514,9 @@ class DQConnector:
                 f"SELECT TABLE_NAME, COLUMN_NAME"
                 f" FROM {catalog}.INFORMATION_SCHEMA.COLUMNS"
                 f" WHERE TABLE_SCHEMA = %s"
-                f"   AND COLUMN_NAME IN ('QC_ID', 'SUBJECT_AREA', 'SQL_CODE')",
-                (schema,),
+                f"   AND COLUMN_NAME IN ('QC_ID', 'SUBJECT_AREA', 'SQL_CODE')"
+                f"   AND TABLE_NAME ILIKE %s",
+                (schema, "CONFIG%"),
             )
             by_table: Dict[str, set] = {}
             for tname, cname in cur.fetchall():
@@ -665,15 +756,19 @@ class DQConnector:
         return database, schema, warehouse
 
     def execute_dq_rule(self, qc_id: str, subject_area: Optional[str] = None,
-                        limit: int = 500) -> Dict[str, Any]:
+                        limit: int = 500,
+                        rule: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Fetch and execute a DQ rule SQL to get actual failing rows.
 
         Runs the RAW SQL_CODE in the resolved context (identical to the View Details
         endpoint) so the verdict here matches what a user sees in the detail panel.
         Row volume is bounded by execute_dq_sql's fetch cap, so no LIMIT wrapper is
         added (wrapping a WITH/CTE rule can change its behavior).
+
+        Pass ``rule`` when the caller already resolved the definition (RCA) to avoid
+        a second multi-table config search.
         """
-        rule = self.fetch_dq_rule_sql(qc_id, subject_area)
+        rule = rule or self.fetch_dq_rule_sql(qc_id, subject_area)
         if not rule:
             return {"executed": False, "error": "No DQ rule SQL found", "columns": [], "rows": [],
                     "rule_sql": None}
