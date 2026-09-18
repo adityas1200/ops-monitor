@@ -41,11 +41,16 @@ Also `context.rca` — slim current Workbench RCA (root cause, summary, tables) 
 
 ## Human-in-the-loop RCA
 After an RCA report exists, the operator can steer it in chat:
+- "correct RCA — check DIM_TARGETS_HCP load instead"
+- "re-run RCA with suggestion: the timeout is in the upstream extract"
 - "this RCA is not correct, find the exact root cause"
-- "look deeper" / "not the downstream task — check the source load"
-- "also check TABLE_X"
+- "look deeper" / "also check TABLE_X"
 
-Chat re-runs RCA with that message as `extra_context` plus the previous RCA conclusion. The new payload updates Workbench.
+For correction phrases, pass the message as operator guidance and reuse the most recent
+full RCA's verified evidence, SQL analysis, diagnostics, and lineage when available. Run a
+correction-only reasoning pass, preserve the structural evidence in the updated Workbench
+payload, and update Workbench automatically. Fall back to a full RCA only when there is no
+matching cached report.
 
 ## Response Style
 - Use **short paragraphs and bullet lists** (UI renders newlines).

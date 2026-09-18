@@ -116,21 +116,67 @@ button { font-family: inherit; cursor: pointer; }
   color: rgba(255,255,255,.5);
   text-align: center;
 }
-.sidebar-footer .mode-pill.live { color: #2ecc71; border-color: rgba(46,204,113,.4); }
+.sidebar-footer .mode-pill.live { color: #fff; border-color: rgba(255,255,255,.35); }
 .sidebar-footer .theme-toggle {
   width: 100%;
   border-radius: 8px;
   background: rgba(255,255,255,.06);
   border: 1px solid rgba(255,255,255,.12);
-  color: rgba(255,255,255,.7);
+  color: #fff;
 }
 .sidebar-footer .theme-toggle:hover { background: rgba(255,255,255,.12); }
 
 /* ---- Sub-tabs (Dashboard) ------------------------------------------ */
-.subtabs { display: flex; gap: 6px; margin-bottom: 4px; }
-.subtab { padding: 6px 14px; border-radius: 8px; background: transparent; color: var(--muted);
-  border: 1px solid var(--border); font-size: 13px; }
-.subtab.active { background: var(--panel2); color: var(--text); border-color: var(--accent); }
+.subtabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  margin-bottom: 14px;
+  border: 2px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel2);
+}
+.subtab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 16px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: color .15s ease, background .15s ease, box-shadow .15s ease;
+}
+.subtab:hover:not(.active) {
+  color: var(--text);
+  background: var(--panel);
+}
+.subtab.active {
+  color: #fff;
+  background: var(--accent);
+  box-shadow: 0 3px 10px rgba(59, 125, 232, .28);
+}
+.subtab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.subtab-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, .18);
+  font-size: 12px;
+  line-height: 1;
+}
+.subtab:not(.active) .subtab-icon {
+  background: var(--panel);
+}
 
 /* ---- Mode pill (non-sidebar usage) --------------------------------- */
 .mode-pill { font-size: 12px; padding: 4px 10px; border-radius: 20px;
@@ -155,11 +201,26 @@ button { font-family: inherit; cursor: pointer; }
 .theme-toggle:hover { background: var(--border); }
 
 /* ---- Body / main panes -------------------------------------------- */
-.body { display: flex; flex: 1; overflow: hidden; position: relative; }
-.main { flex: 1; min-width: 0; overflow: auto; padding: 20px; }
+.body {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  position: relative;
+}
+.main {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 0;
+  overflow: auto;
+  padding: 20px;
+  transition: width .3s ease;
+}
+.main > div { width: 100%; }
 
 /* Agent chat — in-flow panel that compresses main from the right */
 .chat-pane {
+  position: relative;
   width: 0;
   min-width: 0;
   border-left: 0 solid var(--border);
@@ -168,15 +229,44 @@ button { font-family: inherit; cursor: pointer; }
   flex-direction: column;
   overflow: hidden;
   flex-shrink: 0;
-  transition: width .28s ease, min-width .28s ease, border-left-width .28s ease;
+  will-change: width, min-width;
+  transition:
+    width .3s cubic-bezier(.4, 0, .2, 1),
+    min-width .3s cubic-bezier(.4, 0, .2, 1),
+    border-left-width .2s ease;
 }
 .chat-pane.open {
-  width: 440px;
-  min-width: 440px;
+  width: var(--chat-pane-width, 440px);
+  min-width: var(--chat-pane-width, 440px);
   border-left-width: 1px;
 }
+.chat-pane.resizing {
+  transition: none;
+}
+.chat-pane-resize-handle {
+  position: absolute;
+  inset: 0 auto 0 0;
+  z-index: 3;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+  outline: none;
+}
+.chat-pane-resize-handle::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 2px;
+  background: transparent;
+  transition: background .15s ease;
+}
+.chat-pane-resize-handle:hover::after,
+.chat-pane-resize-handle:focus-visible::after,
+.chat-pane.resizing .chat-pane-resize-handle::after {
+  background: var(--accent);
+}
 
-/* Floating Agent Chat launcher */
+/* Floating AMQ Assist launcher */
 .chat-fab {
   position: fixed;
   right: 28px;
@@ -190,7 +280,7 @@ button { font-family: inherit; cursor: pointer; }
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  cursor: grab;
+  cursor: pointer;
   color: #fff;
   background: var(--accent);
   box-shadow: 0 8px 22px rgba(59, 125, 232, 0.45);
@@ -202,8 +292,6 @@ button { font-family: inherit; cursor: pointer; }
   transform: translateY(-1px) scale(1.03);
   box-shadow: 0 10px 26px rgba(59, 125, 232, 0.55);
 }
-.chat-fab:active { cursor: grabbing; }
-.chat-fab--placed { right: auto; bottom: auto; }
 .chat-fab__icon {
   display: inline-flex;
   align-items: center;
@@ -222,15 +310,16 @@ button { font-family: inherit; cursor: pointer; }
 .kpis { display: grid; grid-template-columns: repeat(6, 1fr); gap: 14px; margin-bottom: 18px; }
 .kpi { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
 .kpi .v { font-size: 30px; font-weight: 700; }
-.kpi .l { color: var(--muted); font-size: 13px; margin-top: 4px; }
+.kpi .l { color: var(--muted); font-size: 13px; font-weight: 700; margin-top: 4px; }
 .kpi.success .v { color: var(--green); } .kpi.failed .v { color: var(--red); }
 .kpi.delayed .v { color: var(--amber); } .kpi.warning .v { color: var(--amber); } .kpi.skipped .v { color: var(--grey); }
-.kpi.running .v { color: var(--accent); }
+.kpi.running .v { color: var(--accent2); }
 .kpi.total .v { color: var(--accent); }
 
 /* ---- Toolbar / inputs ---------------------------------------------- */
 .toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
-.toolbar label { color: var(--muted); font-size: 13px; margin-right: 4px; }
+.toolbar label { color: var(--muted); font-size: 13px; font-weight: 700; margin-right: 4px; }
+.toolbar .dashboard-refresh { font-weight: 700; }
 .toolbar__search {
   flex: 1 1 320px;
   min-width: min(100%, 320px);
@@ -372,7 +461,7 @@ tr:hover td { background: var(--panel2); }
 .msg { padding: 9px 12px; border-radius: 10px; font-size: 13px; max-width: 90%; line-height: 1.4; }
 .msg.user { align-self: flex-end; background: var(--accent); color: white; }
 .msg.bot { align-self: flex-start; background: var(--panel2); border: 1px solid var(--border); }
-.msg .agent-tag { font-size: 10px; opacity: .7; text-transform: uppercase; }
+.msg .agent-tag { font-size: 10px; font-weight: 700; opacity: .8; text-transform: uppercase; }
 .msg-markdown { white-space: normal; }
 .msg-markdown p { margin: 0 0 8px; }
 .msg-markdown p:last-child { margin-bottom: 0; }
@@ -383,17 +472,25 @@ tr:hover td { background: var(--panel2); }
 .msg-markdown pre code { background: none; padding: 0; }
 .msg-markdown strong { font-weight: 600; }
 .msg-markdown h1, .msg-markdown h2, .msg-markdown h3, .msg-markdown h4 { margin: 8px 0 4px; font-size: 13px; font-weight: 700; }
-.chat-input { display: flex; gap: 8px; align-items: stretch; padding: 12px; border-top: 1px solid var(--border); }
-.chat-input input {
+.chat-input { display: flex; gap: 8px; align-items: flex-end; padding: 12px; border-top: 1px solid var(--border); }
+.chat-input textarea {
   flex: 1;
   min-height: 42px;
+  max-height: 62px; /* ~2 lines + padding; JS also caps height */
   padding: 10px 12px;
   font-size: 14px;
+  line-height: 1.4;
+  resize: none;
+  overflow-y: hidden;
+  box-sizing: border-box;
+  font-family: inherit;
 }
 .chat-input .btn {
   min-height: 42px;
+  height: 42px;
   padding: 10px 18px;
   font-size: 14px;
+  flex-shrink: 0;
 }
 
 /* ---- Workbench / test ---------------------------------------------- */
@@ -524,7 +621,10 @@ tr:hover td { background: var(--panel2); }
 }
 
 /* ---- Settings ----------------------------------------------------- */
-.settings-page { max-width: 1100px; }
+.settings-page {
+  width: 100%;
+  max-width: none;
+}
 .settings-lead { margin: 6px 0 0; font-size: 13px; }
 .settings-section-desc { font-size: 12px; margin: 0 0 14px; line-height: 1.45; }
 .settings-subtabs { margin-bottom: 14px; }
@@ -677,6 +777,7 @@ tr:hover td { background: var(--panel2); }
   font-size: 14px;
   margin: 0 0 12px;
   line-height: 1.5;
+  white-space: pre-line;
 }
 
 /* ---- Rich Root Cause ---------------------------------------------- */

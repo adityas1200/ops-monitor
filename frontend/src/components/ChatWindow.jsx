@@ -2,34 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { api, chatStream } from '../api/client'
 
-function buildWelcome(context) {
-  const dash = context.dashboard || {}
-  const tab = (context.tab || '').toLowerCase()
-  const view = dash.view === 'dq' ? 'Data Quality' : 'Tasks'
-  const failedT = dash.failedTasks?.length ?? 0
-  const failedD = dash.failedDqChecks?.length ?? 0
-  const range = dash.dateFrom && dash.dateTo ? `${dash.dateFrom} → ${dash.dateTo}` : 'your date range'
-
-  let intro = `Hi! I'm synced with the Dashboard (${view} view, ${range}).`
-  if (tab === 'dashboard') {
-    if (dash.view === 'dq') {
-      intro += failedD
-        ? ` I see ${failedD} failed DQ check(s) — ask "failed DQ checks" for details or click a row for resolution help.`
-        : ' No failed DQ checks in this range. Ask for a "DQ summary" or change the date filter.'
-    } else {
-      intro += failedT
-        ? ` I see ${failedT} failed/delayed task(s) — ask "failed tasks" for details, or select a row for RCA.`
-        : ' No failed tasks in this range. Ask for a "task summary" or adjust filters.'
-    }
-  } else if (tab === 'workbench') {
-    intro += ' Use quick actions below for RCA and fixes on the selected pipeline.'
-  } else if (tab === 'settings') {
-    intro += ' I can help with Snowflake/AWS connectivity and monitoring configuration.'
-  } else {
-    intro += ' Ask about failed tasks, DQ checks, RCA, or resolution plans.'
-  }
-  return intro
-}
+const WELCOME_MSG =
+  'Hi! I\'m AMQ Assist. Ask about failed tasks, DQ checks, RCA, resolution plans, or suggested fixes.'
 
 function getQuickActions(context, activePipeline) {
   const tab = (context.tab || '').toLowerCase()
@@ -41,7 +15,7 @@ function getQuickActions(context, activePipeline) {
   if (tab === 'workbench' || (hasSelection && !isDqRow)) {
     return [
       { label: 'Run RCA', text: 'Run RCA on the selected pipeline' },
-      { label: 'Correct RCA', text: 'This RCA is not correct, find the exact root cause' },
+      { label: 'Correct RCA', text: 'Correct RCA with my suggestion: ', fillOnly: true },
       { label: 'Resolution plan', text: 'Give me a resolution plan with RCA and suggested fix' },
       { label: 'Suggest fix', text: 'Suggest a fix for the selected failure' },
     ]
@@ -71,7 +45,7 @@ function getQuickActions(context, activePipeline) {
     if (hasSelection && !isDqRow) {
       actions.push(
         { label: 'Run RCA', text: 'Run RCA on the selected task' },
-        { label: 'Correct RCA', text: 'This RCA is not correct, find the exact root cause' },
+        { label: 'Correct RCA', text: 'Correct RCA with my suggestion: ', fillOnly: true },
         { label: 'Resolution plan', text: 'Give me a resolution plan for the selected task' },
       )
     }
@@ -95,7 +69,7 @@ function getQuickActions(context, activePipeline) {
 
 function agentLabel(agent) {
   const labels = {
-    chat: 'assistant',
+    chat: 'AMQ Assist',
     rca: 'RCA',
     fix: 'fix',
     test: 'validation',
@@ -116,31 +90,25 @@ function isRcaPayload(payload) {
   )
 }
 
+function isRcaRequestText(text) {
+  return /\b(rca|root cause)\b/i.test(text)
+    && /\b(run|rerun|re-run|correct|refine|again)\b/i.test(text)
+}
+
 export default function ChatWindow({
   activePipeline,
-  notices = [],
   activityContext = {},
   collapsed: _collapsed = false,
   onToggleCollapsed,
   onRcaFromChat,
+  onRcaPending,
 }) {
-  const welcome = useMemo(() => buildWelcome(activityContext), [
-    activityContext.tab,
-    activityContext.dashboard?.view,
-    activityContext.dashboard?.dateFrom,
-    activityContext.dashboard?.dateTo,
-    activityContext.dashboard?.failedTasks?.length,
-    activityContext.dashboard?.failedDqChecks?.length,
-  ])
-
-  const [msgs, setMsgs] = useState([{ role: 'bot', agent: 'chat', text: welcome }])
+  const [msgs, setMsgs] = useState([{ role: 'bot', agent: 'chat', text: WELCOME_MSG }])
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const [streamingMsg, setStreamingMsg] = useState(null)
   const endRef = useRef(null)
-  const seenNotices = useRef(new Set())
-  const lastPipelineId = useRef(null)
-  const welcomeKey = useRef('')
+  const inputRef = useRef(null)
   const [sessionId] = useState(() => {
     const stored = sessionStorage.getItem('opsmon_session')
     if (stored) return stored
@@ -157,46 +125,42 @@ export default function ChatWindow({
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [msgs, streamingMsg])
 
   useEffect(() => {
-    const key = `${activityContext.tab}:${activityContext.dashboard?.view}`
-    if (welcomeKey.current && welcomeKey.current !== key) {
-      setMsgs((m) => [...m, { role: 'bot', agent: 'chat', text: buildWelcome(activityContext) }])
-    }
-    welcomeKey.current = key
-  }, [activityContext.tab, activityContext.dashboard?.view])
-
-  useEffect(() => {
-    notices.forEach((n) => {
-      if (!n?.id || seenNotices.current.has(n.id)) return
-      seenNotices.current.add(n.id)
-      setMsgs((m) => [...m, { role: 'bot', agent: n.agent || 'connectivity', text: n.text }])
-    })
-  }, [notices])
-
-  useEffect(() => {
-    if (!activePipeline?.id || lastPipelineId.current === activePipeline.id) return
-    lastPipelineId.current = activePipeline.id
-    const isDq = String(activePipeline.id).startsWith('dq_')
-    const hint = isDq
-      ? 'Ask: explain failure · resolution plan'
-      : 'Ask: Run RCA · resolution plan · suggest fix'
-    setMsgs((m) => [...m, {
-      role: 'bot',
-      agent: 'chat',
-      text: `Context: "${activePipeline.name}" (${activePipeline.status}).\n${activePipeline.error ? `Error: ${String(activePipeline.error).slice(0, 180)}` : ''}\n${hint}`,
-    }])
-  }, [activePipeline?.id])
+    const el = inputRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    const styles = window.getComputedStyle(el)
+    const lineHeight = parseFloat(styles.lineHeight) || 20
+    const padY = (parseFloat(styles.paddingTop) || 0) + (parseFloat(styles.paddingBottom) || 0)
+    const maxHeight = lineHeight * 2 + padY
+    const next = Math.min(el.scrollHeight, maxHeight)
+    el.style.height = `${next}px`
+    el.style.overflowY = el.scrollHeight > maxHeight ? 'auto' : 'hidden'
+  }, [input])
 
   const sendText = (raw) => {
     const text = (raw ?? '').trim()
     if (!text) return
+    const expectsRca = isRcaRequestText(text)
+    let executesRca = expectsRca
     setMsgs((m) => [...m, { role: 'user', text }])
     setInput('')
     setBusy(true)
     setStreamingMsg({ role: 'bot', agent: 'chat', text: '' })
+    // The server emits intent metadata only after it has performed the RCA.
+    // Start the Workbench loader from the submitted text so it is visible
+    // during the actual processing period.
+    if (expectsRca) onRcaPending?.(true)
 
-    chatStream(text, activePipeline?.id, activityContext, sessionId, {
+    const targetId = activePipeline?.id
+      || activityContext?.rca?.pipeline_id
+      || activityContext?.rca?.qc_id
+    chatStream(text, targetId, activityContext, sessionId, {
       onMeta: (meta) => {
         setStreamingMsg((prev) => ({ ...prev, agent: meta.agent }))
+        if (meta?.intent === 'run_rca') {
+          executesRca = true
+          onRcaPending?.(true)
+        }
       },
       onChunk: (chunk) => {
         setStreamingMsg((prev) => ({ ...prev, text: prev.text + chunk }))
@@ -213,26 +177,22 @@ export default function ChatWindow({
           }
           return null
         })
-        if (isRcaPayload(payload)) onRcaFromChat?.(payload)
+        if (isRcaPayload(payload) && executesRca) onRcaFromChat?.(payload)
+        else onRcaPending?.(false)
         setBusy(false)
       },
       onError: (err) => {
         setStreamingMsg(null)
         // Fallback to synchronous API
-        api.chat(text, activePipeline?.id, { ...activityContext, session_id: sessionId })
+        api.chat(text, targetId, { ...activityContext, session_id: sessionId })
           .then((r) => {
             setMsgs((m) => [...m, { role: 'bot', agent: r.agent, text: r.reply }])
-            if (isRcaPayload(r.payload)) onRcaFromChat?.(r.payload)
+            if (isRcaPayload(r.payload) && executesRca) onRcaFromChat?.(r.payload)
+            else onRcaPending?.(false)
           })
           .catch((e) => {
+            onRcaPending?.(false)
             setMsgs((m) => [...m, { role: 'bot', agent: 'error', text: 'Error: ' + e.message }])
-            api.reportActivityError({
-              tab: activityContext.tab || 'Chat',
-              action: 'send message',
-              error: e.message,
-              details: activityContext,
-            }).then((r) => setMsgs((m) => [...m, { role: 'bot', agent: 'chat', text: r.reply }]))
-              .catch(() => {})
           })
           .finally(() => setBusy(false))
       },
@@ -241,18 +201,35 @@ export default function ChatWindow({
 
   const send = () => sendText(input)
   const quick = (t) => sendText(t)
+  const fillInput = (t) => {
+    setInput(t)
+    requestAnimationFrame(() => {
+      const el = inputRef.current
+      if (!el) return
+      el.focus()
+      const len = t.length
+      el.setSelectionRange(len, len)
+    })
+  }
+
+  const onInputKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      send()
+    }
+  }
 
   return (
     <div className="chat-window">
       <div className="chat-head">
         <div className="chat-head-row">
-          <div className="chat-title">Agent Chat</div>
+          <div className="chat-title">AMQ Assist</div>
           <button
             type="button"
             className="chat-collapse-btn"
             onClick={onToggleCollapsed}
-            title="Close Agent Chat"
-            aria-label="Close Agent Chat"
+            title="Close AMQ Assist"
+            aria-label="Close AMQ Assist"
           >
             ×
           </button>
@@ -290,19 +267,21 @@ export default function ChatWindow({
             type="button"
             className="btn sec chat-chip"
             disabled={busy}
-            onClick={() => quick(q.text)}
+            onClick={() => (q.fillOnly ? fillInput(q.text) : quick(q.text))}
           >
             {q.label}
           </button>
         ))}
       </div>
       <div className="chat-input">
-        <input
-          type="text"
+        <textarea
+          ref={inputRef}
+          rows={1}
           placeholder="Ask about failed tasks, DQ checks, RCA, or correct a root cause…"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && send()}
+          onKeyDown={onInputKeyDown}
+          aria-label="Chat message"
         />
         <button type="button" className="btn" disabled={busy} onClick={send}>Send</button>
       </div>

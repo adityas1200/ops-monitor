@@ -12,3 +12,7 @@ frontend/dist/
 # Env
 .env
 *.local
+
+# Cursor IDE local/nested repo
+.cursor/
+

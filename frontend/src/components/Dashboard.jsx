@@ -325,7 +325,7 @@ function DQView({ data, status, nameFilter, loading, configured, onSelect, onRun
     <LoadingOverlay active={loading} label="Loading data quality results">
       {data?.table && !showSkeleton && (
         <p className="muted" style={{ margin: '0 0 12px', fontSize: 12 }}>
-          Source: <code>{data.table}</code>
+          <strong>Source:</strong> <code>{data.table}</code>
         </p>
       )}
       {showSkeleton ? <KpiSkeleton /> : <KpiBar kpis={data?.kpis || {}} defs={DQ_KPI_DEFS} />}
@@ -570,11 +570,21 @@ export default function Dashboard({
   return (
     <div>
       <div className="subtabs">
-        <button className={`subtab ${subTab === 'dq' ? 'active' : ''}`} onClick={() => setSubTab('dq')}>
-          DQ Status
+        <button
+          className={`subtab ${subTab === 'dq' ? 'active' : ''}`}
+          onClick={() => setSubTab('dq')}
+          aria-pressed={subTab === 'dq'}
+        >
+          <span className="subtab-icon" aria-hidden="true">✓</span>
+          <span>DQ Status</span>
         </button>
-        <button className={`subtab ${subTab === 'tasks' ? 'active' : ''}`} onClick={() => setSubTab('tasks')}>
-          Tasks
+        <button
+          className={`subtab ${subTab === 'tasks' ? 'active' : ''}`}
+          onClick={() => setSubTab('tasks')}
+          aria-pressed={subTab === 'tasks'}
+        >
+          <span className="subtab-icon" aria-hidden="true">▤</span>
+          <span>Tasks</span>
         </button>
       </div>
 
@@ -593,12 +603,12 @@ export default function Dashboard({
             id="dash-search"
             type="search"
             placeholder={subTab === 'dq'
-              ? 'QC ID, subject area, check type'
+              ? 'QC ID, Subject Area, Check Type'
               : 'Pipeline / task, platform'}
             value={nameFilter}
             onChange={(e) => setNameFilter(e.target.value)}
             aria-label={subTab === 'dq'
-              ? 'Search DQ checks by QC ID, subject area, or check type'
+              ? 'Search DQ checks by QC ID, Subject Area, or Check Type'
               : 'Search tasks by pipeline, task, or platform'}
           />
         </div>
@@ -634,7 +644,7 @@ export default function Dashboard({
           }}
           aria-label="Date range to"
         />
-        <button className={`btn sec${busy ? ' is-loading' : ''}`} onClick={refresh} disabled={busy}>
+        <button className={`btn sec dashboard-refresh${busy ? ' is-loading' : ''}`} onClick={refresh} disabled={busy}>
           Refresh
         </button>
         {subTab === 'dq' && (

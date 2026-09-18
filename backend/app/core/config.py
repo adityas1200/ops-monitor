@@ -53,6 +53,17 @@ TASK_MONITOR_WAREHOUSE = os.getenv("TASK_MONITOR_WAREHOUSE", "PROD_ETL_DAYLIGHT_
 # Session STATEMENT_TIMEOUT_IN_SECONDS for dashboard TASK_HISTORY queries (default 180).
 TASK_TELEMETRY_STATEMENT_TIMEOUT_S = os.getenv("TASK_TELEMETRY_STATEMENT_TIMEOUT_S", "180")
 
+# Lineage traversal — how upstream tracing recognises the source/ingestion (L1) layer.
+# Tracing only stops on an explicit match; a table with no discoverable producer and no
+# match here is reported as unresolved rather than assumed to be a source.
+LINEAGE_SOURCE_SCHEMAS = os.getenv(
+    "LINEAGE_SOURCE_SCHEMAS", "L1,RAW,RAW_V2,LANDING,INGEST,INGESTION")
+LINEAGE_SOURCE_TABLE_PREFIXES = os.getenv("LINEAGE_SOURCE_TABLE_PREFIXES", "L1_,RAW_,SRC_")
+LINEAGE_SOURCE_TAG = os.getenv("LINEAGE_SOURCE_TAG", "DATA_LAYER")
+LINEAGE_SOURCE_TAG_VALUES = os.getenv("LINEAGE_SOURCE_TAG_VALUES", "L1,RAW,SOURCE,INGESTION")
+LINEAGE_MAX_DEPTH = int(os.getenv("LINEAGE_MAX_DEPTH", "8"))
+LINEAGE_MAX_LOOKUPS = int(os.getenv("LINEAGE_MAX_LOOKUPS", "60"))
+
 # Sanitize proxy env vars (some corporate VDIs inject newlines that break httpx)
 for _proxy_var in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
     _val = os.environ.get(_proxy_var)
@@ -107,8 +118,18 @@ _DEFAULT_SETTINGS: Dict[str, Any] = {
             "subject_area": DQ_SUBJECT_AREA,
             "rules_table_fqn": DQ_RULES_TABLE_FQN,
         },
+        "lineage": {
+            "source_schemas": LINEAGE_SOURCE_SCHEMAS,
+            "source_table_prefixes": LINEAGE_SOURCE_TABLE_PREFIXES,
+            "source_tag": LINEAGE_SOURCE_TAG,
+            "source_tag_values": LINEAGE_SOURCE_TAG_VALUES,
+            "max_depth": LINEAGE_MAX_DEPTH,
+            "max_lookups": LINEAGE_MAX_LOOKUPS,
+        },
     },
 }
+
+_MONITORING_SECTIONS = ("tasks", "dq", "lineage")
 
 
 def is_sso_auth(authenticator: str) -> bool:
@@ -199,6 +220,16 @@ def _default_monitoring() -> Dict[str, Any]:
 
 def _new_connection_id() -> str:
     return str(uuid.uuid4())
+
+
+def _merge_monitoring(raw: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Overlay stored monitoring values on the defaults, section by section."""
+    stored = raw or {}
+    defaults = _default_monitoring()
+    return {
+        section: {**defaults[section], **(stored.get(section) or {})}
+        for section in _MONITORING_SECTIONS
+    }
 
 
 def _make_profile(
@@ -323,16 +354,7 @@ def _ensure_connections_structure(data: Dict[str, Any]) -> tuple[Dict[str, Any],
                 profile_id=pid,
                 aws={**_default_aws(), **(raw.get("aws") or {})},
                 snowflake={**_default_snowflake(), **(raw.get("snowflake") or {})},
-                monitoring={
-                    "tasks": {
-                        **_default_monitoring()["tasks"],
-                        **((raw.get("monitoring") or {}).get("tasks") or {}),
-                    },
-                    "dq": {
-                        **_default_monitoring()["dq"],
-                        **((raw.get("monitoring") or {}).get("dq") or {}),
-                    },
-                },
+                monitoring=_merge_monitoring(raw.get("monitoring")),
             ))
         out["connections"] = normalized
         active_id = out.get("active_connection_id")
@@ -347,16 +369,7 @@ def _ensure_connections_structure(data: Dict[str, Any]) -> tuple[Dict[str, Any],
         profile_id="default",
         aws={**_default_aws(), **(out.get("aws") or {})},
         snowflake={**_default_snowflake(), **(out.get("snowflake") or {})},
-        monitoring={
-            "tasks": {
-                **_default_monitoring()["tasks"],
-                **((out.get("monitoring") or {}).get("tasks") or {}),
-            },
-            "dq": {
-                **_default_monitoring()["dq"],
-                **((out.get("monitoring") or {}).get("dq") or {}),
-            },
-        },
+        monitoring=_merge_monitoring(out.get("monitoring")),
     )
     out["connections"] = [profile]
     out["active_connection_id"] = profile["id"]
@@ -372,7 +385,7 @@ def load_settings() -> Dict[str, Any]:
                 if section in data and isinstance(data[section], dict):
                     base[section].update(data[section])
             if "monitoring" in data and isinstance(data["monitoring"], dict):
-                for subsection in ("tasks", "dq"):
+                for subsection in _MONITORING_SECTIONS:
                     if subsection in data["monitoring"]:
                         for k, v in data["monitoring"][subsection].items():
                             if v is None:
@@ -524,12 +537,50 @@ def get_dq_monitoring_config(settings: Dict[str, Any] | None = None) -> Dict[str
     }
 
 
+def _as_upper_list(value: Any, default: str) -> List[str]:
+    """Accept either a comma-separated string or a list; normalize to upper-case tokens."""
+    raw = value if value not in (None, "") else default
+    items = raw if isinstance(raw, (list, tuple)) else str(raw).split(",")
+    return [str(i).strip().upper() for i in items if str(i).strip()]
+
+
+def get_lineage_config(settings: Dict[str, Any] | None = None) -> Dict[str, Any]:
+    """Effective lineage traversal config (rules that terminate upstream tracing)."""
+    s = settings or load_settings()
+    lin = s.get("monitoring", {}).get("lineage", {}) or {}
+    try:
+        max_depth = int(lin.get("max_depth") or LINEAGE_MAX_DEPTH)
+    except (TypeError, ValueError):
+        max_depth = LINEAGE_MAX_DEPTH
+    try:
+        max_lookups = int(lin.get("max_lookups") or LINEAGE_MAX_LOOKUPS)
+    except (TypeError, ValueError):
+        max_lookups = LINEAGE_MAX_LOOKUPS
+    return {
+        "source_schemas": _as_upper_list(
+            lin.get("source_schemas"), LINEAGE_SOURCE_SCHEMAS),
+        "source_table_prefixes": _as_upper_list(
+            lin.get("source_table_prefixes"), LINEAGE_SOURCE_TABLE_PREFIXES),
+        "source_tag": str(
+            lin.get("source_tag") or LINEAGE_SOURCE_TAG).strip().upper(),
+        "source_tag_values": _as_upper_list(
+            lin.get("source_tag_values"), LINEAGE_SOURCE_TAG_VALUES),
+        "max_depth": max(1, max_depth),
+        "max_lookups": max(0, max_lookups),
+    }
+
+
 def validate_monitoring_settings(monitoring: Dict[str, Any]) -> list[str]:
     """Validate effective monitoring config (stored values fall back to defaults)."""
     wrapper = {"monitoring": monitoring or {}}
     tasks = get_task_monitoring_config(wrapper)
     dq = get_dq_monitoring_config(wrapper)
+    lineage = get_lineage_config(wrapper)
     errors: list[str] = []
+    if not lineage["source_schemas"] and not lineage["source_tag"]:
+        errors.append(
+            "Lineage tracing needs at least one source schema or a source tag, "
+            "otherwise upstream traversal can never reach the ingestion layer.")
 
     if not tasks["monitor_database"]:
         errors.append("Task monitoring requires a database name.")
@@ -550,6 +601,7 @@ def normalize_monitoring_settings(monitoring: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "tasks": get_task_monitoring_config(wrapper),
         "dq": get_dq_monitoring_config(wrapper),
+        "lineage": get_lineage_config(wrapper),
     }
 
 
@@ -751,10 +803,7 @@ def _mask_profile_secrets(profile: Dict[str, Any]) -> Dict[str, Any]:
     sf["password"] = mask(sf.get("password", ""))
     sf["private_key_pem"] = "***" if sf.get("private_key_pem") else ""
     sf["private_key_passphrase"] = mask(sf.get("private_key_passphrase", ""))
-    p["monitoring"] = {
-        "tasks": get_task_monitoring_config({"monitoring": p.get("monitoring") or {}}),
-        "dq": get_dq_monitoring_config({"monitoring": p.get("monitoring") or {}}),
-    }
+    p["monitoring"] = normalize_monitoring_settings(p.get("monitoring") or {})
     return p
 
 
@@ -780,10 +829,7 @@ def masked_settings() -> Dict[str, Any]:
     s["snowflake"]["private_key_pem"] = mask_pem(s["snowflake"].get("private_key_pem", ""))
     s["snowflake"]["private_key_passphrase"] = mask(s["snowflake"].get("private_key_passphrase", ""))
     s["platforms"] = platforms_configured(s)
-    s["monitoring"] = {
-        "tasks": get_task_monitoring_config(s),
-        "dq": get_dq_monitoring_config(s),
-    }
+    s["monitoring"] = normalize_monitoring_settings(s.get("monitoring") or {})
     active_id = s.get("active_connection_id")
     connections = s.get("connections") or []
     s["active_connection_id"] = active_id

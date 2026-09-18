@@ -1,6 +1,10 @@
 from __future__ import annotations
+import copy
 import json
+import logging
 import re
+import threading
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -17,6 +21,62 @@ CATEGORY_DEPENDENCY  = "Dependency Failure"
 CATEGORY_INFRA       = "Infrastructure Failure"
 CATEGORY_AVAIL       = "Data Availability Failure"
 CATEGORY_UNKNOWN     = "Unknown Failure"
+
+logger = logging.getLogger(__name__)
+
+_RCA_CACHE_TTL_SECONDS = 60 * 60
+_RCA_CACHE_MAX_ENTRIES = 32
+_RCA_RESULT_CACHE: Dict[str, Tuple[float, Dict[str, Any]]] = {}
+_RCA_RESULT_CACHE_LOCK = threading.RLock()
+
+
+def _cache_rca_result(result: Dict[str, Any]) -> None:
+    """Keep recent full RCA evidence in-process for fast operator corrections."""
+    pipeline_id = str(result.get("pipeline_id") or "")
+    if not pipeline_id or result.get("error"):
+        return
+    now = time.monotonic()
+    with _RCA_RESULT_CACHE_LOCK:
+        expired = [
+            key for key, (stored_at, _) in _RCA_RESULT_CACHE.items()
+            if now - stored_at > _RCA_CACHE_TTL_SECONDS
+        ]
+        for key in expired:
+            _RCA_RESULT_CACHE.pop(key, None)
+        _RCA_RESULT_CACHE[pipeline_id] = (now, copy.deepcopy(result))
+        while len(_RCA_RESULT_CACHE) > _RCA_CACHE_MAX_ENTRIES:
+            oldest = min(_RCA_RESULT_CACHE, key=lambda key: _RCA_RESULT_CACHE[key][0])
+            _RCA_RESULT_CACHE.pop(oldest, None)
+
+
+def _get_cached_rca_result(pipeline_id: str) -> Optional[Dict[str, Any]]:
+    """Return an isolated copy so correction merging cannot mutate the cache."""
+    now = time.monotonic()
+    with _RCA_RESULT_CACHE_LOCK:
+        entry = _RCA_RESULT_CACHE.get(str(pipeline_id))
+        if not entry:
+            return None
+        stored_at, result = entry
+        if now - stored_at > _RCA_CACHE_TTL_SECONDS:
+            _RCA_RESULT_CACHE.pop(str(pipeline_id), None)
+            return None
+        return copy.deepcopy(result)
+
+
+def _compact_correction_evidence(value: Any, depth: int = 0) -> Any:
+    """Bound cached evidence before placing it in the correction prompt."""
+    if depth >= 5:
+        return str(value)[:500]
+    if isinstance(value, str):
+        return value[:3000]
+    if isinstance(value, dict):
+        return {
+            str(key): _compact_correction_evidence(item, depth + 1)
+            for key, item in list(value.items())[:30]
+        }
+    if isinstance(value, (list, tuple)):
+        return [_compact_correction_evidence(item, depth + 1) for item in list(value)[:20]]
+    return value
 
 
 def _normalize_rca_dates(date_from: Optional[str] = None, date_to: Optional[str] = None) -> Tuple[Optional[str], Optional[str]]:
@@ -114,6 +174,90 @@ def _confidence_level(score: float) -> str:
     return "Low"
 
 
+def _impact_counts(impact: Dict[str, Any]) -> Dict[str, int]:
+    """Return counts from the final impact object used by the RCA UI."""
+    return {
+        "tables": len(impact.get("impacted_tables") or []),
+        "pipelines": len(impact.get("impacted_pipelines") or []),
+        "reports": len(impact.get("impacted_reports") or []),
+        "tasks": len(impact.get("downstream_tasks") or []),
+    }
+
+
+def _format_impact_summary(impact: Dict[str, Any]) -> str:
+    """Format concise names plus counts from the final resolved impact object."""
+    counts = _impact_counts(impact)
+    logger.info(
+        "Impact counts before summary generation: %s",
+        json.dumps(counts, sort_keys=True),
+    )
+
+    def asset_names(key: str) -> List[str]:
+        names: List[str] = []
+        for item in (impact.get(key) or [])[:3]:
+            if isinstance(item, str):
+                name = item.strip()
+            elif isinstance(item, dict):
+                name = str(
+                    item.get("fqn") or item.get("table")
+                    or item.get("name") or item.get("id") or ""
+                ).strip()
+            else:
+                name = ""
+            if name and name not in names:
+                names.append(name)
+        return names
+
+    tables = asset_names("impacted_tables")
+    pipelines = asset_names("impacted_pipelines")
+    reports = asset_names("impacted_reports")
+    count_parts = [
+        f"{counts[key]} {singular if counts[key] == 1 else plural}"
+        for key, singular, plural in (
+            ("tables", "Table", "Tables"),
+            ("pipelines", "Pipeline", "Pipelines"),
+            ("reports", "Report", "Reports"),
+        )
+        if counts[key] > 0
+    ]
+    counts_only = " • ".join(count_parts) if count_parts else "No downstream impact identified"
+    if not (tables or pipelines or reports):
+        return counts_only
+
+    lines = ["Validation results impact:"]
+    if tables:
+        lines.append(f"• Data Table{'s' if len(tables) > 1 else ''}: {', '.join(tables)}")
+    if pipelines:
+        lines.append(f"• Pipeline{'s' if len(pipelines) > 1 else ''}: {', '.join(pipelines)}")
+    if reports:
+        lines.append(f"• Reports: {', '.join(reports)}")
+    lines.extend(["Total Impact:", counts_only])
+    return "\n".join(lines)
+
+
+def _merge_impact_lists(
+    discovered: Dict[str, Any], existing: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Union final lineage impact with prior collected impact; never reduce counts."""
+    merged = dict(existing or {})
+    merged.update({
+        key: list(dict.fromkeys(
+            list((existing or {}).get(key) or []) + list(discovered.get(key) or [])
+        ))
+        for key in (
+            "impacted_tables", "impacted_pipelines",
+            "impacted_reports", "downstream_tasks",
+        )
+    })
+    for key, value in discovered.items():
+        if key not in merged or key not in {
+            "impacted_tables", "impacted_pipelines",
+            "impacted_reports", "downstream_tasks",
+        }:
+            merged[key] = value
+    return merged
+
+
 def _lineage_text(nodes: List[Dict[str, Any]], edges: List[Dict[str, Any]]) -> str:
     """
     Convert graph {nodes, edges} to the skill's text arrow format:
@@ -171,6 +315,143 @@ class RCAAgent(BaseAgent):
     def __init__(self):
         super().__init__()
         self._knowledge = self._load_knowledge_file()
+
+    @classmethod
+    def get_cached_result(cls, pipeline_id: str) -> Optional[Dict[str, Any]]:
+        return _get_cached_rca_result(pipeline_id)
+
+    def correct_from_cached(self, pipeline_id: str,
+                            extra_context: str) -> Optional[Dict[str, Any]]:
+        """Revise an RCA using its collected evidence without querying Snowflake again."""
+        prior = self.get_cached_result(pipeline_id)
+        if not prior or prior.get("error") or not extra_context:
+            return None
+
+        evidence_payload = {
+            "pipeline_id": prior.get("pipeline_id"),
+            "analysis_type": prior.get("analysis_type"),
+            "previous_conclusion": {
+                "summary": prior.get("summary"),
+                "detailed_analysis": prior.get("detailed_analysis"),
+                "category": prior.get("category"),
+                "confidence": prior.get("confidence"),
+                "root_cause_node": prior.get("root_cause_node"),
+                "root_cause_name": prior.get("root_cause_name"),
+                "root_cause": prior.get("root_cause"),
+            },
+            "verified_evidence": prior.get("evidence"),
+            "structured_evidence": prior.get("structured_evidence"),
+            "code_analysis": prior.get("code_analysis"),
+            "diagnostic_results": prior.get("diagnostic_results"),
+            "dq_execution_result": prior.get("dq_execution_result"),
+            "procedure_chain": prior.get("procedure_chain"),
+            "affected_tables": prior.get("affected_tables"),
+            "lineage_table": prior.get("lineage_table"),
+            "related_dq_failures": prior.get("related_dq_failures"),
+            "related_task_failures": prior.get("related_task_failures"),
+            "operator_feedback": extra_context,
+        }
+        system = (
+            "You are a senior data-operations RCA analyst performing a fast human-in-the-loop "
+            "correction. Revise the previous conclusion using ONLY the cached verified evidence "
+            "provided. Do not request or invent new query results. Treat operator feedback as a "
+            "high-priority hypothesis, but only assert details supported by the evidence. If the "
+            "operator rejected the old conclusion, do not repeat it unchanged; explain the more "
+            "specific supported cause and what changed. Return raw JSON only with these keys: "
+            "failure_type, summary, detailed_analysis, code_analysis, root_cause, impact_summary, "
+            "evidence, impact_assessment, remediation, confidence_level, confidence. root_cause "
+            "must contain explanation, business_explanation, technical_explanation, entities, "
+            "code_snippets, and comparison."
+        )
+        raw = self.harness.reason(
+            system,
+            json.dumps(_compact_correction_evidence(evidence_payload), default=str),
+            max_tokens=2600,
+        ) if self.harness.available else None
+        llm = self._extract_json(raw) if raw else None
+        if not llm:
+            return None
+
+        result = copy.deepcopy(prior)
+        category = llm.get("failure_type") or result.get("category") or CATEGORY_UNKNOWN
+        result["failure_type"] = category
+        result["category"] = category
+        if llm.get("summary"):
+            result["summary"] = str(llm["summary"])
+        if llm.get("detailed_analysis"):
+            result["detailed_analysis"] = str(llm["detailed_analysis"])
+
+        root_cause = dict(result.get("root_cause") or {})
+        if isinstance(llm.get("root_cause"), dict):
+            root_cause.update(llm["root_cause"])
+        if root_cause:
+            root_cause["business_explanation"] = (
+                root_cause.get("business_explanation") or result.get("summary"))
+            root_cause["technical_explanation"] = (
+                root_cause.get("technical_explanation") or result.get("detailed_analysis"))
+            result["root_cause"] = root_cause
+
+        if isinstance(llm.get("evidence"), list) and llm["evidence"]:
+            result["evidence"] = [str(item) for item in llm["evidence"]]
+        if isinstance(llm.get("impact_assessment"), dict):
+            impact = _merge_impact_lists(
+                llm["impact_assessment"], result.get("impact_assessment"))
+            result["impact_assessment"] = impact
+        result["impact_summary"] = _format_impact_summary(
+            result.get("impact_assessment") or {})
+        if isinstance(llm.get("remediation"), dict):
+            remediation = dict(result.get("remediation") or {})
+            remediation.update(llm["remediation"])
+            result["remediation"] = remediation
+
+        code_analysis = dict(result.get("code_analysis") or {})
+        if llm.get("code_analysis"):
+            code_analysis["llm_explanation"] = (
+                llm["code_analysis"] if isinstance(llm["code_analysis"], str)
+                else json.dumps(llm["code_analysis"], default=str)
+            )
+        result["code_analysis"] = code_analysis
+
+        try:
+            confidence = float(llm.get("confidence", result.get("confidence", 0.5)))
+        except (TypeError, ValueError):
+            confidence = float(result.get("confidence") or 0.5)
+        confidence = min(1.0, max(0.0, confidence))
+        result["confidence"] = round(confidence, 2)
+        result["confidence_level"] = (
+            llm.get("confidence_level") or _confidence_level(confidence))
+
+        incident_summary = dict(result.get("incident_summary") or {})
+        incident_summary.update({
+            "failure_type": category,
+            "root_cause_category": category,
+            "confidence_score": round(confidence * 100),
+        })
+        result["incident_summary"] = incident_summary
+
+        guidance = _operator_hint_text(extra_context) or extra_context
+        journey = list(result.get("investigation_journey") or [])
+        journey.append({
+            "step": "Operator correction applied",
+            "status": "done",
+            "detail": guidance[:240],
+        })
+        result["investigation_journey"] = journey
+        result["refinement"] = {
+            "note": "Corrected from the existing verified RCA evidence; Snowflake queries were reused.",
+            "reused_evidence": True,
+            "operator_guidance": guidance[:500],
+            "rejected_root": prior.get("root_cause_node"),
+        }
+        result["chat_narrative"] = (
+            f"Re-ran RCA using the existing verified evidence and your guidance.\n\n"
+            f"**Corrected root cause:** {result.get('summary', 'RCA updated')}\n\n"
+            f"**Confidence:** {result.get('confidence_level')} "
+            f"({round(result.get('confidence', 0) * 100)}%). "
+            "Workbench has been updated."
+        )
+        _cache_rca_result(result)
+        return result
 
     def _load_knowledge_file(self) -> str:
         """Load the user-contributed rca_knowledge.md alongside the main skill."""
@@ -953,12 +1234,22 @@ class RCAAgent(BaseAgent):
             if n not in impacted_pipelines:
                 impacted_pipelines.append(n)
 
-        # Impacted reports = views / procedures named like reports / dashboards
+        # Preserve the report collection produced by lineage discovery. Summary
+        # generation counts this list directly; it never reclassifies report names.
         impacted_reports: List[str] = []
         for item in (downstream_consumers.get("details") or []):
             name = item.get("name", "").lower()
-            if any(kw in name for kw in ("report", "dashboard", "mart", "bi", "analytics", "kpi")):
+            if any(kw in name for kw in (
+                "report", "dashboard", "mart", "bi", "analytics", "kpi",
+            )):
                 impacted_reports.append(item.get("name"))
+        impacted_reports = list(dict.fromkeys(impacted_reports))
+        downstream_tasks = list(dict.fromkeys(
+            run_by_key.get(k, {}).get("name")
+            or graph.get(k, {}).get("name")
+            or k
+            for k in impacted_keys
+        ))
 
         # Business severity — Critical if reports affected or many pipelines
         n_impact = len(impacted_keys) + len(impacted_tables)
@@ -975,6 +1266,7 @@ class RCAAgent(BaseAgent):
             "impacted_tables": impacted_tables,
             "impacted_pipelines": impacted_pipelines,
             "impacted_reports": impacted_reports,
+            "downstream_tasks": downstream_tasks,
             "business_severity": severity,
         }
 
@@ -1120,7 +1412,8 @@ class RCAAgent(BaseAgent):
 
     def analyze(self, pipeline_id: str, extra_context: Optional[str] = None,
                 date_from: Optional[str] = None, date_to: Optional[str] = None,
-                *, include_narrative: bool = False) -> Dict[str, Any]:
+                *, include_narrative: bool = False,
+                include_lineage: bool = True) -> Dict[str, Any]:
         # #region agent log
         import time as _dbg_time
         from pathlib import Path as _DbgP
@@ -1130,7 +1423,8 @@ class RCAAgent(BaseAgent):
             result = self.analyze_dq(
                 pipeline_id, extra_context,
                 date_from=date_from, date_to=date_to,
-                include_narrative=include_narrative)
+                include_narrative=include_narrative,
+                include_lineage=include_lineage)
             # #region agent log
             try:
                 _DbgP(__file__).resolve().parents[3].joinpath("debug-938378.log").open(
@@ -1443,7 +1737,8 @@ class RCAAgent(BaseAgent):
                 confidence = float(llm["confidence"])
                 confidence_lvl = llm.get("confidence_level") or _confidence_level(confidence)
             if llm.get("impact_assessment"):
-                impact_assessment.update(llm["impact_assessment"])
+                impact_assessment = _merge_impact_lists(
+                    llm["impact_assessment"], impact_assessment)
             if llm.get("remediation"):
                 remediation.update(llm["remediation"])
             if llm.get("evidence"):
@@ -1466,25 +1761,9 @@ class RCAAgent(BaseAgent):
                 "comparison": None,
             }
 
-        # ── Impact summary one-liner ─────────────────────────────────────────
-        impact_summary = None
-        if llm and llm.get("impact_summary"):
-            impact_summary = llm["impact_summary"]
-        else:
-            n_tables = len(impact_assessment.get("impacted_tables", []))
-            n_reports = len(impact_assessment.get("impacted_reports", []))
-            n_pipelines = len(impact_assessment.get("impacted_pipelines", []))
-            parts = []
-            if n_tables:
-                parts.append(f"{n_tables} table(s)")
-            if n_pipelines:
-                parts.append(f"{n_pipelines} pipeline(s)")
-            if n_reports:
-                report_names = ", ".join(impact_assessment["impacted_reports"][:2])
-                parts.append(f"{n_reports} report(s) including {report_names}")
-            if len(impacted_keys):
-                parts.append(f"{len(impacted_keys)} downstream task(s)")
-            impact_summary = ", ".join(parts) if parts else "No downstream impact identified"
+        # Always derive display text from the final impact object. LLM-authored
+        # prose and separate impacted_keys counts can drift from the UI cards.
+        impact_summary = _format_impact_summary(impact_assessment)
 
         # ── Text lineage diagrams (skill format) ─────────────────────────────
         upstream_text = (
@@ -1599,11 +1878,13 @@ class RCAAgent(BaseAgent):
             "severity": impact_assessment.get("business_severity"),
             "confidence": confidence,
         })
+        _cache_rca_result(result)
         return result
 
     def analyze_dq(self, check_id: str, extra_context: Optional[str] = None,
                    date_from: Optional[str] = None, date_to: Optional[str] = None,
-                   *, include_narrative: bool = False) -> Dict[str, Any]:
+                   *, include_narrative: bool = False,
+                   include_lineage: bool = True) -> Dict[str, Any]:
         # #region agent log
         import time as _dbg_time
         from pathlib import Path as _DbgP
@@ -2346,25 +2627,8 @@ class RCAAgent(BaseAgent):
         if remediation_override:
             remediation.update(remediation_override)
 
-        # ── Impact summary one-liner ─────────────────────────────────────────
-        impact_summary = None
-        if llm and llm.get("impact_summary"):
-            impact_summary = llm["impact_summary"]
-        else:
-            n_tables = len(impact_assessment.get("impacted_tables", []))
-            n_reports = len(impact_assessment.get("impacted_reports", []))
-            n_pipelines = len(impact_assessment.get("impacted_pipelines", []))
-            parts = []
-            if n_tables:
-                parts.append(f"{n_tables} table(s)")
-            if n_pipelines:
-                parts.append(f"{n_pipelines} pipeline(s)")
-            if n_reports:
-                report_names = ", ".join(impact_assessment["impacted_reports"][:2])
-                parts.append(f"{n_reports} report(s) including {report_names}")
-            if len(impacted_keys):
-                parts.append(f"{len(impacted_keys)} downstream task(s)")
-            impact_summary = ", ".join(parts) if parts else "No downstream impact identified"
+        # Always derive display text from the final impact object.
+        impact_summary = _format_impact_summary(impact_assessment)
 
         upstream_text = _lineage_text(dq_upstream_lineage.get("nodes", []), dq_upstream_lineage.get("edges", []))
         downstream_text = _lineage_text(dq_downstream_lineage.get("nodes", []), dq_downstream_lineage.get("edges", []))
@@ -2514,6 +2778,7 @@ class RCAAgent(BaseAgent):
         except Exception:
             pass
         # #endregion
+        _cache_rca_result(result)
         return result
 
     def _refine(self, target, root, category, hint: str, idx, run_by_key) -> Optional[Dict[str, Any]]:

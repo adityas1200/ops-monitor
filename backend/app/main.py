@@ -125,14 +125,11 @@ def merge_settings_payload(current: Dict[str, Any], new: Dict[str, Any]) -> Dict
 
     if new.get("monitoring"):
         merged["monitoring"] = normalize_monitoring_settings({
-            "tasks": {
-                **merged.get("monitoring", {}).get("tasks", {}),
-                **(new["monitoring"].get("tasks") or {}),
-            },
-            "dq": {
-                **merged.get("monitoring", {}).get("dq", {}),
-                **(new["monitoring"].get("dq") or {}),
-            },
+            section: {
+                **merged.get("monitoring", {}).get(section, {}),
+                **(new["monitoring"].get(section) or {}),
+            }
+            for section in ("tasks", "dq", "lineage")
         })
     return merged
 
@@ -147,7 +144,7 @@ def connectivity():
 @app.post("/api/connectivity")
 def test_connectivity(payload: SettingsPayload):
     """Probe form values without saving. Returns can_save for optional Save UI."""
-    merged = merge_settings_payload(load_settings(), payload.model_dump())
+    merged = merge_settings_payload(load_settings(), payload.model_dump(by_alias=True))
     sf_errors = validate_snowflake_settings(merged.get("snowflake", {}))
     if sf_errors:
         raise HTTPException(status_code=400, detail="; ".join(sf_errors))
@@ -162,7 +159,7 @@ def get_settings():
 
 @app.post("/api/settings")
 def update_settings(payload: SettingsPayload):
-    current = merge_settings_payload(load_settings(), payload.model_dump())
+    current = merge_settings_payload(load_settings(), payload.model_dump(by_alias=True))
 
     sf_errors = validate_snowflake_settings(current.get("snowflake", {}))
     if sf_errors:
@@ -229,6 +226,7 @@ def rca(req: RCARequest):
     # #endregion
     result = orchestrator.run_rca(
         req.pipeline_id, req.extra_context, date_from=req.date_from, date_to=req.date_to,
+        include_lineage=req.include_lineage,
     )
     # #region agent log
     try:

@@ -201,6 +201,7 @@ function ImpactCards({ ia }) {
     { label: 'Tables', value: ia.impacted_tables?.length || 0 },
     { label: 'Pipelines', value: ia.impacted_pipelines?.length || 0 },
     { label: 'Reports', value: ia.impacted_reports?.length || 0 },
+    { label: 'Downstream Tasks', value: ia.downstream_tasks?.length || 0 },
     { label: 'Severity', value: ia.business_severity || 'Unknown', isSeverity: true },
   ]
   return (
@@ -216,6 +217,35 @@ function ImpactCards({ ia }) {
       ))}
     </div>
   )
+}
+
+function impactSummaryFromAssessment(ia) {
+  const tables = (ia.impacted_tables || []).slice(0, 3)
+  const pipelines = (ia.impacted_pipelines || []).slice(0, 3)
+  const reports = (ia.impacted_reports || []).slice(0, 3)
+  const nameOf = (item) => typeof item === 'string'
+    ? item.trim()
+    : String(item?.fqn || item?.table || item?.name || item?.id || '').trim()
+  const names = (items) => items.map(nameOf).filter(Boolean)
+  const tableNames = names(tables)
+  const pipelineNames = names(pipelines)
+  const reportNames = names(reports)
+  const countParts = [
+    [ia.impacted_tables?.length || 0, 'Table', 'Tables'],
+    [ia.impacted_pipelines?.length || 0, 'Pipeline', 'Pipelines'],
+    [ia.impacted_reports?.length || 0, 'Report', 'Reports'],
+  ]
+    .filter(([count]) => count > 0)
+    .map(([count, singular, plural]) => `${count} ${count === 1 ? singular : plural}`)
+  const countsOnly = countParts.join(' • ') || 'No downstream impact identified'
+  if (!tableNames.length && !pipelineNames.length && !reportNames.length) return countsOnly
+
+  const lines = ['Validation results impact:']
+  if (tableNames.length) lines.push(`• Data Table${tableNames.length > 1 ? 's' : ''}: ${tableNames.join(', ')}`)
+  if (pipelineNames.length) lines.push(`• Pipeline${pipelineNames.length > 1 ? 's' : ''}: ${pipelineNames.join(', ')}`)
+  if (reportNames.length) lines.push(`• Reports: ${reportNames.join(', ')}`)
+  lines.push('Total Impact:', countsOnly)
+  return lines.join('\n')
 }
 
 function ConfidenceSection({ confidence, confidenceLevel, drivers }) {
@@ -334,7 +364,7 @@ function RcaReport({
       <div className="rca-section">
         <h4 className="rca-section__title">Impact Summary</h4>
         <p className="rca-impact-summary">
-          {rca.impact_summary || `${ia.impacted_tables?.length || 0} table(s), ${ia.impacted_pipelines?.length || 0} pipeline(s) impacted`}
+          {rca.impact_summary || impactSummaryFromAssessment(ia)}
         </p>
         <ImpactCards ia={ia} />
       </div>
@@ -445,7 +475,7 @@ function KnowledgeForm({ rca, onClose, onSaved }) {
 
 export default function Workbench({
   activePipeline, onSelect, onReportError, onBackToDashboard, onOpenKnowledge, dateFrom, dateTo,
-  onRcaChange, externalRca,
+  onRcaChange, externalRca, externalRcaBusy = false,
 }) {
   const [selected, setSelected] = useState(activePipeline)
   const [rca, setRca] = useState(null)
@@ -473,9 +503,15 @@ export default function Workbench({
     const key = `${id}|${df || ''}|${dt || ''}`
     rcaTargetIdRef.current = id
     const epoch = ++rcaEpochRef.current
+    // Every execution starts with a clean workbench. Clear before checking the
+    // shared in-flight map so joining an existing request cannot show stale RCA.
+    setBusy('rca')
+    setRca(null)
+    setFix(null)
+    setShowKnowledgeForm(false)
+    onRcaChangeRef.current?.(null)
     const existing = _rcaInflight.get(key)
     if (existing) {
-      setBusy('rca')
       existing
         .then((r) => {
           if (epoch !== rcaEpochRef.current || rcaTargetIdRef.current !== id) return
@@ -489,8 +525,6 @@ export default function Workbench({
         .finally(() => { if (rcaTargetIdRef.current === id && epoch === rcaEpochRef.current) setBusy('') })
       return
     }
-    setBusy('rca'); setRca(null); setFix(null)
-    onRcaChangeRef.current?.(null)
     const date_from = df ? `${df}T00:00:00+00:00` : undefined
     const date_to = dt ? `${dt}T23:59:59+00:00` : undefined
     const promise = api.rca(id, undefined, { date_from, date_to })
@@ -514,27 +548,45 @@ export default function Workbench({
     _rcaInflight.set(key, promise)
   }, [])
 
-  // Only start RCA when the selected pipeline/check changes — NOT when Dashboard date filters change
-  // (Workbench stays mounted under display:none, so date props used to re-fire runRCA for the old id).
+  // Run when the target changes or Dashboard explicitly requests a fresh run.
+  // Date filter changes alone do not trigger RCA.
   useEffect(() => {
     if (!activePipeline?.id) return
     setSelected(activePipeline)
     setHasActioned(true)
     runRCA(activePipeline.id)
-  }, [activePipeline?.id, runRCA])
+  }, [activePipeline?.id, activePipeline?.rcaRunId, runRCA])
 
   useEffect(() => {
     if (!externalRca?.rca || externalRca.rca.error) return
     const pid = externalRca.pipelineId
-    if (pid && activePipeline?.id && pid !== activePipeline.id) return
     rcaEpochRef.current += 1
-    rcaTargetIdRef.current = activePipeline?.id || pid || rcaTargetIdRef.current
+    rcaTargetIdRef.current = pid || activePipeline?.id || rcaTargetIdRef.current
+    if (pid && selected?.id !== pid) {
+      setSelected((current) => ({ ...(current || {}), id: pid }))
+    }
     setRca(externalRca.rca)
     setFix(null)
     setHasActioned(true)
     setBusy('')
     onRcaChangeRef.current?.(externalRca.rca)
   }, [externalRca?.seq])
+
+  const wasExternalRcaBusy = useRef(false)
+  useEffect(() => {
+    if (externalRcaBusy) {
+      wasExternalRcaBusy.current = true
+      setBusy('rca')
+      setFix(null)
+      setShowKnowledgeForm(false)
+      setHasActioned(true)
+      return
+    }
+    if (wasExternalRcaBusy.current) {
+      wasExternalRcaBusy.current = false
+      setBusy((b) => (b === 'rca' ? '' : b))
+    }
+  }, [externalRcaBusy])
   const suggestFix = () => {
     setBusy('fix')
     const ctx = slimRcaContext(rca)
@@ -572,7 +624,7 @@ export default function Workbench({
 
       {busy === 'rca' && <div className="card spinner">Running RCA agent…</div>}
 
-      {rca && !rca.error && (
+      {busy !== 'rca' && rca && !rca.error && (
         <RcaReport
           rca={rca}
           selected={selected}

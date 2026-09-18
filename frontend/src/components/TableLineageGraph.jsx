@@ -6,6 +6,7 @@ const COLORS = {
   impacted:   '#ffb547',
   healthy:    '#2ecc71',
   source:     '#4f8cff',
+  unresolved: '#a78bfa',
 }
 
 const COLORS_UPSTREAM = {
@@ -14,6 +15,7 @@ const COLORS_UPSTREAM = {
   impacted:   '#8b95a5',
   healthy:    '#8b95a5',
   source:     '#b0b8c4',
+  unresolved: '#a78bfa',
 }
 
 const COLORS_DOWNSTREAM = {
@@ -22,6 +24,7 @@ const COLORS_DOWNSTREAM = {
   impacted:   '#e74c3c',
   healthy:    '#ffb547',
   source:     '#8b95a5',
+  unresolved: '#a78bfa',
 }
 
 const PAD_X = 16
@@ -39,6 +42,17 @@ function displayLabel(raw) {
 
 function fullLabel(n) {
   return displayLabel(n.label || n.name || n.id || '')
+}
+
+function nodeTooltip(n) {
+  const label = fullLabel(n)
+  if (n.state === 'source') {
+    return `${label}\nSource layer${n.layer ? ` (${n.layer})` : ''}: ${n.source_reason || 'explicitly marked'}`
+  }
+  if (n.state === 'unresolved') {
+    return `${label}\nUnresolved lineage: ${n.unresolved_reason || 'no producer found'}`
+  }
+  return label
 }
 
 function nodeSize(n) {
@@ -166,7 +180,7 @@ function LineageGraphSvg({ nodes, edges, colorMap, markerId }) {
         if (n.type === 'task') {
           return (
             <g key={n.id}>
-              <title>{label}</title>
+              <title>{nodeTooltip(n)}</title>
               <rect
                 x={p.x} y={p.y} width={p.w} height={p.h} rx="6"
                 fill="var(--code-bg)" stroke={c}
@@ -182,11 +196,14 @@ function LineageGraphSvg({ nodes, edges, colorMap, markerId }) {
           )
         }
 
-        const dash = n.type === 'view' ? '4,2' : n.type === 'procedure' ? '2,2' : undefined
+        const dash = n.state === 'unresolved' ? '5,3'
+          : n.type === 'view' ? '4,2'
+          : n.type === 'procedure' ? '2,2'
+          : undefined
         const rx = n.type === 'procedure' ? 5 : p.h / 2
         return (
           <g key={n.id}>
-            <title>{label}</title>
+            <title>{nodeTooltip(n)}</title>
             <rect
               x={p.x} y={p.y} width={p.w} height={p.h} rx={rx}
               fill="var(--code-bg)" stroke={c}
@@ -226,9 +243,10 @@ export default function TableLineageGraph({
 
   if (!tableLineage?.nodes?.length) return null
 
-  const { nodes, edges } = tableLineage
+  const { nodes, edges, resolution } = tableLineage
   const nodeCount = nodes.length
   const markerId = `tl-arrow-${direction || colorScheme || 'default'}`
+  const unresolved = resolution?.unresolved_tables || []
 
   const directionLabel =
     direction === 'upstream'
@@ -266,9 +284,19 @@ export default function TableLineageGraph({
             <span><span className="dot" style={{ background: COLORS.root_cause }} />Root</span>
             <span><span className="dot" style={{ background: COLORS.failed }} />Failed</span>
             <span><span className="dot" style={{ background: COLORS.impacted }} />Impacted</span>
-            <span><span className="dot" style={{ background: COLORS.source }} />Source</span>
+            <span><span className="dot" style={{ background: COLORS.source }} />Source (L1)</span>
+            {unresolved.length > 0 && (
+              <span><span className="dot" style={{ background: COLORS.unresolved }} />Unresolved</span>
+            )}
             <span className="muted" style={{ fontSize: 11 }}>Scroll to see the full graph</span>
           </div>
+          {unresolved.length > 0 && (
+            <div className="muted" style={{ fontSize: 11, marginBottom: 6 }}>
+              {unresolved.length} table(s) could not be traced to the source layer:{' '}
+              {unresolved.slice(0, 3).map((u) => u.table).join(', ')}
+              {unresolved.length > 3 ? '…' : ''}. Lineage below is incomplete.
+            </div>
+          )}
           <div className="table-lineage-scroll">
             <LineageGraphSvg nodes={nodes} edges={edges} colorMap={colorMap} markerId={markerId} />
           </div>

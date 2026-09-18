@@ -3,13 +3,15 @@ from __future__ import annotations
 
 import json
 import re
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from app.connectors.dq_connector import DQConnector
 from app.connectors.snowflake_connector import SnowflakeConnector
-from app.core.config import get_dq_monitoring_config, get_task_monitoring_config, load_settings
+from app.core.config import (get_dq_monitoring_config, get_lineage_config,
+                             get_task_monitoring_config, load_settings)
 
 _TABLE_RE = re.compile(
     r"\b([A-Z][A-Z0-9_]*\.[A-Z][A-Z0-9_]*\.[A-Z][A-Z0-9_]+)\b",
@@ -19,6 +21,10 @@ _TABLE_RE = re.compile(
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 _TASK_PREFIX_RE = re.compile(r"^(?:SF\s+Task:\s*)?(?:TASK_?)?", re.IGNORECASE)
+
+# States that mean "this node is part of the failure" — the upstream walk annotates
+# such nodes but never relabels them as healthy/source.
+_FAILURE_STATES = frozenset({"root_cause", "failed"})
 
 _BARE_TABLE_RE = re.compile(r"\b(ANLT[A-Z0-9_]+|DIM[A-Z0-9_]+|FACT[A-Z0-9_]+|STG[A-Z0-9_]+|RAW[A-Z0-9_]+|VW_[A-Z0-9_]+|V_[A-Z0-9_]+)\b", re.IGNORECASE)
 
@@ -67,9 +73,14 @@ class LineageService:
     def __init__(self):
         self.settings = load_settings()
         self.sf = SnowflakeConnector()
+        self.lineage_cfg = get_lineage_config(self.settings)
         self._graph_cache: Optional[Dict[str, Dict[str, Any]]] = None
         self._def_cache: Dict[Tuple[str, str, str, str], Optional[str]] = {}
         self._io_cache: Dict[Tuple[str, str, str], Dict[str, List[str]]] = {}
+        self._table_meta_cache: Dict[str, Dict[str, Any]] = {}
+        self._tag_cache: Dict[Tuple[str, str, str, str], Optional[str]] = {}
+        self._layer_cache: Dict[str, Dict[str, Any]] = {}
+        self._producer_cache: Dict[str, Optional[Dict[str, Any]]] = {}
 
     def load_task_graph(self) -> Dict[str, Dict[str, Any]]:
         """task_key -> {name, database, schema, upstream[], downstream[], label}."""
@@ -626,6 +637,243 @@ class LineageService:
 
         return chain
 
+    # ---- Source-layer (L1) detection --------------------------------------
+
+    def fetch_table_metadata(self, database: str, schema: str,
+                             name: str) -> Dict[str, Any]:
+        """Ingestion-relevant metadata for one table (type, comment, Snowpipe target)."""
+        key = f"{database}.{schema}.{name}".upper()
+        cached = self._table_meta_cache.get(key)
+        if cached is not None:
+            return cached
+
+        meta: Dict[str, Any] = {
+            "exists": False, "table_type": "", "comment": "", "is_pipe_target": False,
+        }
+        if not self.sf._configured() or not _IDENTIFIER_RE.match(database or ""):
+            self._table_meta_cache[key] = meta
+            return meta
+        try:
+            cur = self.sf._connect().cursor()
+            cur.execute(
+                f"SELECT TABLE_TYPE, COMMENT FROM {database}.INFORMATION_SCHEMA.TABLES"
+                f" WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s LIMIT 1",
+                (schema, name),
+            )
+            row = cur.fetchone()
+            if row:
+                meta["exists"] = True
+                meta["table_type"] = str(row[0] or "").upper()
+                meta["comment"] = str(row[1] or "")
+            if meta["table_type"] != "EXTERNAL TABLE":
+                cur.execute(
+                    f"SELECT COUNT(*) FROM {database}.INFORMATION_SCHEMA.PIPES"
+                    f" WHERE DEFINITION ILIKE %s",
+                    (f"%{name}%",),
+                )
+                pipe_row = cur.fetchone()
+                meta["is_pipe_target"] = bool(pipe_row and pipe_row[0])
+        except Exception:  # noqa: BLE001
+            pass
+        self._table_meta_cache[key] = meta
+        return meta
+
+    def fetch_object_tag(self, database: str, schema: str, name: str,
+                         tag_name: str) -> Optional[str]:
+        """Read a governance tag on the table, falling back to its schema."""
+        if not tag_name:
+            return None
+        key = (database.upper(), schema.upper(), name.upper(), tag_name.upper())
+        if key in self._tag_cache:
+            return self._tag_cache[key]
+        value: Optional[str] = None
+        if self.sf._configured() and database and schema and name:
+            try:
+                cur = self.sf._connect().cursor()
+                cur.execute(
+                    """
+                    SELECT TAG_VALUE
+                    FROM SNOWFLAKE.ACCOUNT_USAGE.TAG_REFERENCES
+                    WHERE UPPER(TAG_NAME) = %s
+                      AND UPPER(OBJECT_DATABASE) = %s
+                      AND (
+                        (DOMAIN = 'TABLE' AND UPPER(OBJECT_SCHEMA) = %s
+                         AND UPPER(OBJECT_NAME) = %s)
+                        OR (DOMAIN = 'SCHEMA' AND UPPER(OBJECT_NAME) = %s)
+                      )
+                    ORDER BY CASE WHEN DOMAIN = 'TABLE' THEN 0 ELSE 1 END
+                    LIMIT 1
+                    """,
+                    (tag_name.upper(), database.upper(), schema.upper(),
+                     name.upper(), schema.upper()),
+                )
+                row = cur.fetchone()
+                if row and row[0]:
+                    value = str(row[0])
+            except Exception:  # noqa: BLE001
+                value = None
+        self._tag_cache[key] = value
+        return value
+
+    def classify_table_layer(self, table_fqn: str,
+                             allow_queries: bool = True) -> Dict[str, Any]:
+        """Decide whether a table is an explicitly marked source/ingestion object.
+
+        Only explicit evidence terminates upstream tracing. ``is_source`` False means
+        "keep tracing / report unresolved", never "assume this is the source".
+        Signals are checked cheapest-first; with ``allow_queries`` False only the
+        configured schema and prefix rules apply, so a negative answer is not cached.
+        """
+        key = str(table_fqn or "").upper()
+        cached = self._layer_cache.get(key)
+        if cached is not None:
+            return dict(cached)
+
+        cfg = self.lineage_cfg
+        parts = key.split(".")
+        db = parts[0] if len(parts) == 3 else ""
+        schema = parts[1] if len(parts) == 3 else ""
+        name = parts[-1] if parts else ""
+        verdict = {"is_source": False, "layer": None, "signal": "", "reason": ""}
+
+        if schema and schema in cfg["source_schemas"]:
+            verdict = {
+                "is_source": True, "layer": schema, "signal": "schema",
+                "reason": f"table lives in configured source schema {schema}",
+            }
+        elif allow_queries and db and schema:
+            tag_value = self.fetch_object_tag(db, schema, name, cfg["source_tag"])
+            meta = self.fetch_table_metadata(db, schema, name)
+            if tag_value and tag_value.strip().upper() in cfg["source_tag_values"]:
+                verdict = {
+                    "is_source": True, "layer": tag_value.strip().upper(),
+                    "signal": "tag",
+                    "reason": f"tagged {cfg['source_tag']}={tag_value.strip().upper()}",
+                }
+            elif meta.get("table_type") == "EXTERNAL TABLE":
+                verdict = {
+                    "is_source": True, "layer": "EXTERNAL", "signal": "external_table",
+                    "reason": "declared as an external table",
+                }
+            elif meta.get("is_pipe_target"):
+                verdict = {
+                    "is_source": True, "layer": "INGESTION", "signal": "snowpipe",
+                    "reason": "loaded by a Snowpipe definition",
+                }
+
+        if not verdict["is_source"]:
+            prefix = next(
+                (p for p in cfg["source_table_prefixes"] if name.startswith(p)), None)
+            if prefix:
+                verdict = {
+                    "is_source": True, "layer": prefix.rstrip("_"),
+                    "signal": "name_prefix",
+                    "reason": f"name matches configured source prefix {prefix}",
+                }
+
+        if verdict["is_source"] or allow_queries:
+            self._layer_cache[key] = dict(verdict)
+        return verdict
+
+    # ---- Producer resolution ----------------------------------------------
+
+    def find_table_producer(
+        self,
+        table_fqn: str,
+        graph: Optional[Dict[str, Dict[str, Any]]] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Find the task, view, or procedure that writes ``table_fqn``.
+
+        Returns None only when nothing in Snowflake claims to produce the table —
+        callers must treat that as unresolved lineage, not as the source layer.
+        """
+        key = str(table_fqn or "").upper()
+        if key in self._producer_cache:
+            cached = self._producer_cache[key]
+            return dict(cached) if cached else None
+
+        parts = key.split(".")
+        if len(parts) != 3:
+            self._producer_cache[key] = None
+            return None
+        db, schema, name = parts
+        graph = graph if graph is not None else self.load_task_graph()
+        producer: Optional[Dict[str, Any]] = None
+
+        # 1. A monitored task whose procedure writes the table.
+        exact, fuzzy = [], []
+        for tkey, meta in graph.items():
+            if (meta.get("database") or "").upper() != db:
+                continue
+            derived = extract_table_name_from_identifier(
+                (meta.get("task_name") or "").upper()) or ""
+            if not derived:
+                continue
+            if derived == name:
+                exact.append((tkey, meta))
+            elif derived in name or name in derived:
+                fuzzy.append((tkey, meta))
+        for tkey, meta in (exact + fuzzy)[:3]:
+            io = self.resolve_task_procedure_io(
+                meta.get("database") or db, meta.get("schema") or schema,
+                meta.get("task_name") or "")
+            outputs = {str(o).upper() for o in io.get("outputs") or []}
+            writes = key in outputs or any(o.split(".")[-1] == name for o in outputs)
+            if writes or not outputs:
+                producer = {
+                    "kind": "task",
+                    "id": tkey,
+                    "label": meta.get("name") or tkey,
+                    "database": meta.get("database") or db,
+                    "schema": meta.get("schema") or schema,
+                    "name": meta.get("task_name") or "",
+                    "inputs": list(io.get("inputs") or []),
+                    "confidence": "verified" if writes else "heuristic",
+                }
+                break
+
+        # 2. The object is itself a view — its SELECT is the producing logic.
+        if producer is None:
+            view_def = self.fetch_object_definition(db, schema, name, "view")
+            if view_def:
+                io = _classify_sql_io(view_def, db, schema)
+                producer = {
+                    "kind": "view",
+                    "id": f"view_{key}",
+                    "label": table_fqn,
+                    "database": db, "schema": schema, "name": name,
+                    "inputs": list(io.get("inputs") or []),
+                    "confidence": "verified",
+                    "self_object": True,
+                }
+
+        # 3. A stored procedure that writes the table.
+        if producer is None:
+            for item in self.discover_downstream_procedures(db, name)[:5]:
+                body = self.fetch_object_definition(
+                    item.get("database") or db, item.get("schema") or "",
+                    item.get("name") or "", "procedure")
+                if not body:
+                    continue
+                io = _classify_sql_io(
+                    body, item.get("database") or db, item.get("schema") or "")
+                outputs = {str(o).upper() for o in io.get("outputs") or []}
+                if key in outputs or any(o.split(".")[-1] == name for o in outputs):
+                    producer = {
+                        "kind": "procedure",
+                        "id": f"procedure_{item['fqn']}",
+                        "label": item["fqn"],
+                        "database": item.get("database") or db,
+                        "schema": item.get("schema") or "",
+                        "name": item.get("name") or "",
+                        "inputs": list(io.get("inputs") or []),
+                        "confidence": "verified",
+                    }
+                    break
+
+        self._producer_cache[key] = dict(producer) if producer else None
+        return producer
+
     # ---- Upstream lineage graph -------------------------------------------
 
     def build_upstream_lineage_graph(
@@ -635,94 +883,294 @@ class LineageService:
         graph: Dict[str, Dict[str, Any]],
         run_by_key: Dict[str, Dict[str, Any]],
         resolve_io_keys: Optional[Set[str]] = None,
+        max_depth: Optional[int] = None,
+        max_lookups: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
-        Build upstream lineage: raw source tables → upstream procedures/tasks → failed task.
+        Build upstream lineage from the failed task back to the source (L1) layer.
 
-        For each task in the backward walk:
-          - Resolve procedure definition → separate input tables from output tables.
-          - Input tables that are produced by an upstream task get a task→table→task chain.
-          - Input tables with no upstream producer are marked as 'source' (raw/seed tables).
+        The walk follows task predecessors and, when a table has no predecessor task,
+        keeps resolving whichever task, view, or procedure writes it. It stops at a
+        table only when ``classify_table_layer`` confirms a source/ingestion object;
+        every other dead end is reported as unresolved in ``result["resolution"]``.
         The failed/root task appears on the rightmost side.
         """
-        nodes: List[Dict[str, Any]] = []
-        edges: List[Dict[str, Any]] = []
-        seen_ids: Set[str] = set()
-        visited_tasks: Set[str] = set()
+        return self._walk_upstream(
+            task_seeds=[target_key],
+            table_seeds=[],
+            graph=graph,
+            run_by_key=run_by_key,
+            root_key=root_key,
+            resolve_io_keys=resolve_io_keys,
+            max_depth=max_depth,
+            max_lookups=max_lookups,
+        )
 
-        def add_node(nid: str, **kw: Any) -> None:
-            if nid not in seen_ids:
-                seen_ids.add(nid)
-                nodes.append({"id": nid, **kw})
+    def _walk_upstream(
+        self,
+        *,
+        task_seeds: Optional[List[str]] = None,
+        table_seeds: Optional[List[str]] = None,
+        graph: Optional[Dict[str, Dict[str, Any]]] = None,
+        run_by_key: Optional[Dict[str, Dict[str, Any]]] = None,
+        root_key: str = "",
+        resolve_io_keys: Optional[Set[str]] = None,
+        max_depth: Optional[int] = None,
+        max_lookups: Optional[int] = None,
+        node_by_id: Optional[Dict[str, Dict[str, Any]]] = None,
+        edges: Optional[List[Dict[str, str]]] = None,
+        edge_seen: Optional[Set[Tuple[str, str]]] = None,
+    ) -> Dict[str, Any]:
+        """Breadth-first upstream walk over tasks and tables, terminating at L1.
+
+        Existing ``node_by_id`` / ``edges`` containers can be passed in so a caller
+        can seed the graph with its own nodes and have the walk extend them.
+        """
+        cfg = self.lineage_cfg
+        graph = graph if graph is not None else self.load_task_graph()
+        run_by_key = run_by_key or {}
+        depth_limit = int(max_depth if max_depth is not None else cfg["max_depth"])
+        remaining = [int(max_lookups if max_lookups is not None else cfg["max_lookups"])]
+
+        nodes: Dict[str, Dict[str, Any]] = node_by_id if node_by_id is not None else {}
+        edge_list: List[Dict[str, str]] = edges if edges is not None else []
+        seen_edges: Set[Tuple[str, str]] = (
+            edge_seen if edge_seen is not None
+            else {(e["from"], e["to"]) for e in edge_list}
+        )
+
+        resolution: Dict[str, Any] = {
+            "status": "complete",
+            "traced_to_source": False,
+            "depth_limit": depth_limit,
+            "deepest_level": 0,
+            "truncated": False,
+            "producer_lookups": 0,
+            "source_tables": [],
+            "unresolved_tables": [],
+        }
+
+        def spend() -> bool:
+            if remaining[0] <= 0:
+                return False
+            remaining[0] -= 1
+            resolution["producer_lookups"] += 1
+            return True
+
+        def put_node(nid: str, **kw: Any) -> Dict[str, Any]:
+            node = nodes.get(nid)
+            if node is None:
+                node = {"id": nid}
+                nodes[nid] = node
+            for key, value in kw.items():
+                node.setdefault(key, value)
+            return node
+
+        def mark_node(nid: str, **kw: Any) -> None:
+            put_node(nid).update(kw)
+
+        def set_state(nid: str, state: str) -> None:
+            """Never downgrade a failure state that a caller already established."""
+            node = put_node(nid)
+            if node.get("state") in _FAILURE_STATES and state not in _FAILURE_STATES:
+                return
+            node["state"] = state
+
+        producers_of: Dict[str, Set[str]] = {}
+        for edge in edge_list:
+            producers_of.setdefault(edge["to"], set()).add(edge["from"])
 
         def add_edge(from_id: str, to_id: str) -> None:
             pair = (from_id, to_id)
-            if pair not in _seen_edges:
-                _seen_edges.add(pair)
-                edges.append({"from": from_id, "to": to_id})
+            if from_id == to_id or pair in seen_edges:
+                return
+            seen_edges.add(pair)
+            edge_list.append({"from": from_id, "to": to_id})
+            producers_of.setdefault(to_id, set()).add(from_id)
 
-        _seen_edges: Set[Tuple[str, str]] = set()
+        def has_modelled_producer(nid: str) -> bool:
+            """True when something other than a table already writes into this node."""
+            return any(
+                nodes.get(src, {}).get("type", "table") != "table"
+                for src in producers_of.get(nid, ())
+            )
 
         def task_state(tkey: str) -> str:
             if tkey == root_key:
                 return "root_cause"
-            run = run_by_key.get(tkey, {})
-            if run.get("status") in ("FAILED", "DELAYED"):
+            if run_by_key.get(tkey, {}).get("status") in ("FAILED", "DELAYED"):
                 return "failed"
             return "healthy"
 
-        queue = [target_key]
+        def unresolved(table: str, reason: str) -> None:
+            mark_node(f"tbl_{table}", unresolved_reason=reason)
+            set_state(f"tbl_{table}", "unresolved")
+            resolution["unresolved_tables"].append({"table": table, "reason": reason})
+
+        visited_tasks: Set[str] = set()
+        visited_tables: Set[str] = set()
+        queue: deque = deque(
+            [("task", key, 0) for key in (task_seeds or [])]
+            + [("table", tbl, 0) for tbl in (table_seeds or [])]
+        )
+
         while queue:
-            tkey = queue.pop(0)
-            if tkey in visited_tasks:
-                continue
-            visited_tasks.add(tkey)
+            kind, ident, depth = queue.popleft()
+            resolution["deepest_level"] = max(resolution["deepest_level"], depth)
 
-            meta = graph.get(tkey, {})
-            run = run_by_key.get(tkey, {})
-            label = run.get("name") or meta.get("name") or tkey
-            platform = run.get("platform") or meta.get("platform") or "snowflake"
-            state = task_state(tkey)
-            add_node(tkey, label=label, type="task", state=state, platform=platform)
+            if kind == "task":
+                if ident in visited_tasks:
+                    continue
+                visited_tasks.add(ident)
+                meta = graph.get(ident, {})
+                run = run_by_key.get(ident, {})
+                put_node(
+                    ident,
+                    label=run.get("name") or meta.get("name") or ident,
+                    type="task",
+                    platform=run.get("platform") or meta.get("platform") or "snowflake",
+                )
+                set_state(ident, task_state(ident))
+                if depth >= depth_limit:
+                    resolution["truncated"] = True
+                    continue
 
-            # Resolve input tables via procedure I/O (falls back to task tables)
-            fallback = list(run.get("tables") or meta.get("tables") or [])
-            db = meta.get("database") or run.get("database") or ""
-            sch = meta.get("schema") or run.get("schema") or ""
-            tname = meta.get("task_name") or ""
-            should_resolve = resolve_io_keys is None or tkey in resolve_io_keys
-            if db and sch and tname and should_resolve:
-                io = self.resolve_task_procedure_io(db, sch, tname, fallback)
-                input_tables = io["inputs"] if (io["inputs"] or io["outputs"]) else fallback
-            else:
-                input_tables = fallback
-
-            upstream_keys = list(meta.get("upstream", []))
-
-            # Build: table → upstream_task_that_produces_it
-            producing_task: Dict[str, str] = {}
-            for up_key in upstream_keys:
-                up_run = run_by_key.get(up_key, {})
-                up_meta = graph.get(up_key, {})
-                for tbl in (up_run.get("tables") or up_meta.get("tables") or []):
-                    producing_task.setdefault(tbl, up_key)
-
-            for tbl in input_tables:
-                tbl_id = f"tbl_{tbl}"
-                prod = producing_task.get(tbl)
-                if prod:
-                    add_node(tbl_id, label=tbl, type="table", state=task_state(prod))
-                    add_edge(prod, tbl_id)   # upstream task → table
-                    add_edge(tbl_id, tkey)   # table → current task
+                fallback = list(run.get("tables") or meta.get("tables") or [])
+                db = meta.get("database") or run.get("database") or ""
+                sch = meta.get("schema") or run.get("schema") or ""
+                tname = meta.get("task_name") or ""
+                forced = resolve_io_keys is None or ident in resolve_io_keys
+                if db and sch and tname and (forced or spend()):
+                    io = self.resolve_task_procedure_io(db, sch, tname, fallback)
+                    input_tables = (
+                        io["inputs"] if (io["inputs"] or io["outputs"]) else fallback)
                 else:
-                    add_node(tbl_id, label=tbl, type="table", state="source")
-                    add_edge(tbl_id, tkey)   # raw source → current task
+                    input_tables = fallback
 
-            for up_key in upstream_keys:
-                if up_key not in visited_tasks:
-                    queue.append(up_key)
+                upstream_keys = list(meta.get("upstream", []))
+                producing_task: Dict[str, str] = {}
+                for up_key in upstream_keys:
+                    up_run = run_by_key.get(up_key, {})
+                    up_meta = graph.get(up_key, {})
+                    for tbl in (up_run.get("tables") or up_meta.get("tables") or []):
+                        producing_task.setdefault(tbl, up_key)
 
-        return {"nodes": nodes, "edges": edges}
+                for tbl in input_tables:
+                    tbl_id = f"tbl_{tbl}"
+                    put_node(tbl_id, label=tbl, name=tbl, type="table", state="healthy")
+                    add_edge(tbl_id, ident)
+                    prod = producing_task.get(tbl)
+                    if prod:
+                        set_state(tbl_id, task_state(prod))
+                        add_edge(prod, tbl_id)
+                        queue.append(("task", prod, depth + 1))
+                    else:
+                        queue.append(("table", tbl, depth + 1))
+
+                for up_key in upstream_keys:
+                    queue.append(("task", up_key, depth + 1))
+                continue
+
+            table = str(ident)
+            table_upper = table.upper()
+            if table_upper in visited_tables:
+                continue
+            visited_tables.add(table_upper)
+            tbl_id = f"tbl_{table}"
+            put_node(tbl_id, label=table, name=table, type="table", state="healthy")
+
+            # Free rules first; only pay for tag / ingestion metadata if they miss.
+            verdict = self.classify_table_layer(table, allow_queries=False)
+            if not verdict["is_source"] and spend():
+                verdict = self.classify_table_layer(table, allow_queries=True)
+            if verdict["is_source"]:
+                mark_node(
+                    tbl_id,
+                    layer=verdict["layer"] or "L1",
+                    source_signal=verdict["signal"],
+                    source_reason=verdict["reason"],
+                )
+                set_state(tbl_id, "source")
+                resolution["source_tables"].append({"table": table, **verdict})
+                continue
+
+            if has_modelled_producer(tbl_id):
+                # A caller (or an earlier hop) already attached the writing object;
+                # its own inputs are traced separately.
+                continue
+
+            if depth >= depth_limit:
+                resolution["truncated"] = True
+                unresolved(
+                    table,
+                    f"traversal stopped at depth limit {depth_limit} before reaching "
+                    "a source-layer object",
+                )
+                continue
+
+            if not spend():
+                resolution["truncated"] = True
+                unresolved(
+                    table,
+                    "lineage lookup budget exhausted before a producer could be resolved",
+                )
+                continue
+
+            producer = self.find_table_producer(table, graph)
+            if producer is None:
+                unresolved(
+                    table,
+                    "no producing task, view, or procedure found and no source-layer "
+                    "rule matched",
+                )
+                continue
+
+            if producer.get("self_object"):
+                # The object is itself a view; its SELECT is the producing logic.
+                mark_node(tbl_id, type="view", producer_kind="view")
+                producer_id = tbl_id
+            else:
+                producer_id = producer["id"]
+                put_node(
+                    producer_id,
+                    label=producer["label"],
+                    name=producer["label"],
+                    type=producer["kind"],
+                    state="healthy",
+                    platform="snowflake",
+                )
+                add_edge(producer_id, tbl_id)
+
+            if producer["kind"] == "task":
+                queue.append(("task", producer["id"], depth + 1))
+                continue
+
+            inputs = [
+                i for i in (producer.get("inputs") or [])
+                if str(i).upper() != table_upper
+            ][:8]
+            if not inputs:
+                unresolved(
+                    table,
+                    f"producer {producer['label']} has no resolvable input tables",
+                )
+                continue
+            for inp in inputs:
+                inp_id = f"tbl_{inp}"
+                put_node(inp_id, label=inp, name=inp, type="table", state="healthy")
+                add_edge(inp_id, producer_id)
+                queue.append(("table", inp, depth + 1))
+
+        if resolution["unresolved_tables"]:
+            resolution["status"] = (
+                "partial" if resolution["source_tables"] else "unresolved")
+        resolution["traced_to_source"] = bool(
+            resolution["source_tables"]) and not resolution["unresolved_tables"]
+        return {
+            "nodes": list(nodes.values()),
+            "edges": edge_list,
+            "resolution": resolution,
+        }
 
     def build_dq_check_lineage_graphs(
         self,
@@ -745,18 +1193,16 @@ class LineageService:
             return {"nodes": [], "edges": []}
 
         # ── Upstream ────────────────────────────────────────────────────────
-        up_nodes: List[Dict[str, Any]] = []
+        up_by_id: Dict[str, Dict[str, Any]] = {}
         up_edges: List[Dict[str, Any]] = []
-        up_seen: Set[str] = set()
         up_edge_seen: Set[Tuple[str, str]] = set()
 
         def up_add(nid: str, **kw: Any) -> None:
-            if nid not in up_seen:
-                up_seen.add(nid)
+            if nid not in up_by_id:
                 # TableLineageGraph reads label || name
                 if "label" not in kw and "name" in kw:
                     kw["label"] = kw["name"]
-                up_nodes.append({"id": nid, **kw})
+                up_by_id[nid] = {"id": nid, **kw}
 
         def up_edge(a: str, b: str) -> None:
             pair = (a, b)
@@ -790,7 +1236,11 @@ class LineageService:
             if not obj_name:
                 continue
             obj_type = proc.get("object_type") or "procedure"
-            proc_id = f"{obj_type}_{obj_name}"
+            # Match the node ids the upstream walk produces so both agree on one node.
+            proc_id = (
+                task_key(*obj_name.split(".")) if obj_type == "task"
+                and len(obj_name.split(".")) == 3 else f"{obj_type}_{obj_name}"
+            )
             up_add(
                 proc_id,
                 label=obj_name,
@@ -818,16 +1268,29 @@ class LineageService:
                 if inp_s.upper() in {t.upper() for t in unique_tables}:
                     continue
                 src_id = f"tbl_{inp_s}"
-                up_add(src_id, label=inp_s, name=inp_s, type="table", state="source")
+                up_add(src_id, label=inp_s, name=inp_s, type="table")
                 up_edge(src_id, proc_id)
 
-        # If we have tables but no writers, still show tables as sources into the check.
-        if unique_tables and not (procedure_chain or []):
-            for tbl in unique_tables:
-                # already connected table → check above
-                pass
-
-        upstream = {"nodes": up_nodes, "edges": up_edges} if up_nodes else _empty()
+        # Keep tracing every table in the graph back to an explicit source-layer
+        # object; whatever cannot be traced is reported as unresolved.
+        seeds = list(dict.fromkeys(
+            unique_tables
+            + [
+                str(n.get("name") or n.get("label") or "")
+                for n in up_by_id.values() if n.get("type") == "table"
+            ]
+        ))
+        walked = self._walk_upstream(
+            table_seeds=[s for s in seeds if s],
+            node_by_id=up_by_id,
+            edges=up_edges,
+            edge_seen=up_edge_seen,
+        )
+        upstream = (
+            {"nodes": walked["nodes"], "edges": walked["edges"],
+             "resolution": walked["resolution"]}
+            if walked["nodes"] else _empty()
+        )
 
         # ── Downstream ──────────────────────────────────────────────────────
         dn_nodes: List[Dict[str, Any]] = []

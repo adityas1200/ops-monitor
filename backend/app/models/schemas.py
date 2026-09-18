@@ -1,7 +1,7 @@
 """Pydantic models shared across the API."""
 from __future__ import annotations
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class AWSCreds(BaseModel):
@@ -12,6 +12,8 @@ class AWSCreds(BaseModel):
 
 
 class SnowflakeCreds(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     account: str = ""
     user: str = ""
     authenticator: str = "password"  # password | sso | externalbrowser | IdP URL | keypair
@@ -21,7 +23,9 @@ class SnowflakeCreds(BaseModel):
     warehouse: str = ""
     role: str = ""
     database: str = ""
-    schema: str = ""
+    # ``BaseModel.schema()`` exists in Pydantic, so use an internal name while
+    # preserving the public settings/API key as ``schema``.
+    schema_name: str = Field(default="", alias="schema")
     preprod_account: str = ""
 
 
@@ -79,6 +83,7 @@ class RCARequest(BaseModel):
     extra_context: Optional[str] = None        # interactive refinement hint
     date_from: Optional[str] = None
     date_to: Optional[str] = None
+    include_lineage: bool = True
 
 
 class FixRequest(BaseModel):
