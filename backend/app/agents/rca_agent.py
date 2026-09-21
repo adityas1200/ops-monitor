@@ -529,25 +529,47 @@ class RCAAgent(BaseAgent):
         """Generate a natural-language expert briefing for the chat reply."""
         if not self.harness.available:
             return None
+        is_dq = result.get("analysis_type") == "dq"
         system = (
             "You are a senior data operations analyst briefing a colleague on a failure investigation. "
             "Be direct, specific, and expert. Reference actual task names, table names, and error messages. "
-            "Use markdown: **bold** for key terms, `code` for SQL identifiers, bullet points for lists. "
-            "Keep it to 4-6 sentences. End with a clear recommended next action. "
-            "Do NOT use generic phrases like 'I found the issue' — jump straight to the findings."
+            "Use markdown: **bold** for key terms, `code` for SQL identifiers, bullet points for lists.\n\n"
+            "Structure your response with these sections:\n"
+            "1. **Root Cause** — one sentence stating the exact failure with counts and table names\n"
+            "2. **Business Impact** — 2-3 bullet points on downstream effects\n"
+            "3. **Technical Detail** — what the check/task validates and why it fails\n"
+            "4. **Recommended Action** — concrete next step with a sample query if applicable\n\n"
+            "Do NOT use generic phrases like 'I found the issue' — jump straight to the findings. "
+            "Do NOT echo raw JSON. Ground every claim in the evidence provided."
         )
-        messages = [{"role": "user", "content": json.dumps({
+        diag = result.get("diagnostic_results") or {}
+        code_analysis = result.get("code_analysis") or {}
+        context = {
+            "analysis_type": result.get("analysis_type"),
             "task_name": result.get("root_cause_name"),
             "category": result.get("category"),
             "summary": result.get("summary"),
+            "detailed_analysis": (result.get("detailed_analysis") or "")[:500],
             "confidence": result.get("confidence_level"),
-            "error": (result.get("evidence") or [""])[0][:300],
+            "confidence_score": result.get("confidence"),
+            "evidence": (result.get("evidence") or [])[:4],
             "impact_summary": result.get("impact_summary"),
             "remediation_immediate": (result.get("remediation") or {}).get("immediate_fix"),
             "downstream_count": len(result.get("impacted_nodes") or []),
             "tables": [t.get("table") for t in (result.get("affected_tables") or [])[:5]],
-        }, default=str)}]
-        return self.harness.speak(system, messages, max_tokens=800)
+            "root_cause_explanation": (result.get("root_cause") or {}).get("explanation", "")[:400],
+            "root_cause_comparison": (result.get("root_cause") or {}).get("comparison"),
+        }
+        if is_dq:
+            context.update({
+                "live_status": result.get("current_status"),
+                "live_failing_count": result.get("live_failing_count"),
+                "check_description": (result.get("root_cause_name") or ""),
+                "evidence_facts": diag.get("evidence_facts", [])[:5],
+                "dq_rule_snippet": (code_analysis.get("sql_code") or code_analysis.get("task_sql") or "")[:500],
+            })
+        messages = [{"role": "user", "content": json.dumps(context, default=str)}]
+        return self.harness.speak(system, messages, max_tokens=1200)
 
     def _llm_remediation(self, category: str, target: Dict[str, Any],
                          root: Dict[str, Any], extra_context: Optional[str] = None) -> Optional[Dict[str, Any]]:
@@ -1023,7 +1045,8 @@ class RCAAgent(BaseAgent):
     def _deterministic_root_cause(self, check: Dict[str, Any],
                                   evidence: Dict[str, Any],
                                   tables: List[str],
-                                  dq_rule_sql: Optional[str] = None) -> Dict[str, Any]:
+                                  dq_rule_sql: Optional[str] = None,
+                                  dq_rule: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Build an evidence-grounded root cause without the LLM — used as seed/fallback."""
         facts = evidence.get("evidence_facts") or []
         summary = evidence.get("evidence_summary") or ""
@@ -1038,6 +1061,18 @@ class RCAAgent(BaseAgent):
             or check.get("column_name")
             or ""
         )
+        rule_desc = ""
+        source_table = ""
+        if dq_rule:
+            rule_desc = str(
+                dq_rule.get("QC_DESCRIPTION") or dq_rule.get("qc_description")
+                or dq_rule.get("DESCRIPTION") or dq_rule.get("description") or ""
+            ).strip()
+            source_table = str(
+                dq_rule.get("SOURCE_TABLE") or dq_rule.get("source_table") or ""
+            ).strip()
+        if not desc and rule_desc:
+            desc = rule_desc
 
         # Segment / layer cardinality checks (e.g. QC 308 L3_TGT_CNT vs L2_TGT_CNT).
         is_seg_card = (
@@ -1049,6 +1084,7 @@ class RCAAgent(BaseAgent):
                 and ("DIM_TARGETS" in sql_u or "SALES_UNALIGNED" in sql_u)
             )
         )
+        technical = ""
         if is_seg_card:
             explanation = (
                 f"DQ check '{label}' fails due to an L3/L2 segment cardinality mismatch. "
@@ -1091,26 +1127,43 @@ class RCAAgent(BaseAgent):
                 f"live re-execution found {count_phrase}. "
                 f"Key finding: {top}."
             )
-            if desc and len(desc) > 20:
+            if desc:
                 expected = desc[:240]
+                check_error = str(check.get("error") or "")
+                if check_error and check_error.lower() != desc.lower():
+                    expected = f"{desc} — {check_error[:180]}"
             else:
-                expected = "Compared groups/keys should match (or meet the check threshold)."
+                expected = "All records should pass the check validation rule."
             actual = f"{count_phrase} — {top}" if violation_n else (top or summary)
             business = (
-                f"DQ check '{label}'{desc_label} flagged {count_phrase} "
-                f"in {table_str}. Key finding: {top}."
+                f"{count_phrase.capitalize()} in {table_str} fail the "
+                f"'{desc or label}' validation, indicating a data content defect "
+                f"in the source data. "
+                f"These records will propagate errors to downstream reports and "
+                f"dashboards consuming {table_str.split(',')[0].strip()}."
+            )
+            technical = (
+                f"DQ check '{label}'{desc_label} validates data in {table_str}. "
+                f"Live re-execution found {count_phrase}. "
+                f"The failure is a data content defect, not a SQL syntax error"
+                + (f" — the rule SQL executes correctly but {count_phrase} "
+                   f"breach the validation condition" if dq_rule_sql else "")
+                + f". {top}."
             )
 
         entities = [{"name": t, "type": "table"} for t in tables[:5]]
+        if source_table and source_table not in [e["name"] for e in entities]:
+            entities.append({"name": source_table, "type": "table"})
         for g in evidence.get("grain_columns") or []:
             entities.append({"name": g, "type": "column"})
         for col in ("L3_TGT_CNT", "L2_TGT_CNT", "SEG_GRP_1_RPT_VAL"):
             if col in facts_blob or col in sql_u:
                 entities.append({"name": col, "type": "column"})
+        tech_explanation = technical if technical else (summary or explanation)
         return {
             "explanation": explanation,
             "business_explanation": business,
-            "technical_explanation": summary or explanation,
+            "technical_explanation": tech_explanation,
             "entities": entities,
             "code_snippets": [],
             "comparison": {
@@ -2522,7 +2575,8 @@ class RCAAgent(BaseAgent):
         det_root = None
         if failure_evidence:
             det_root = self._deterministic_root_cause(
-                check, failure_evidence, list(check_tables), dq_rule_sql=dq_rule_sql,
+                check, failure_evidence, list(check_tables),
+                dq_rule_sql=dq_rule_sql, dq_rule=dq_rule,
             )
 
         chain_for_llm = [
@@ -2638,6 +2692,9 @@ class RCAAgent(BaseAgent):
         # Enforce evidence grounding: if we have concrete offenders and the LLM
         # narrative does not cite them, replace with deterministic RC — unless
         # code_analysis already cites evidence (promote that into root_cause).
+        # When operator provided suggestions, merge LLM analysis with det_root
+        # evidence instead of discarding the LLM output entirely.
+        has_operator_guidance = bool(extra_context)
         if failure_evidence and det_root:
             ev_summary = failure_evidence.get("evidence_summary") or "Offending rows collected"
             if ev_summary not in evidence:
@@ -2651,9 +2708,21 @@ class RCAAgent(BaseAgent):
                 ca_text,
             ])
             if not self._llm_cites_evidence(rc_text, failure_evidence):
-                root_cause_obj = det_root
-                summary = det_root["explanation"]
-                detailed_analysis = det_root.get("technical_explanation") or det_root["explanation"]
+                if has_operator_guidance and root_cause_obj and llm:
+                    root_cause_obj = dict(root_cause_obj)
+                    root_cause_obj["comparison"] = det_root.get("comparison")
+                    root_cause_obj["entities"] = det_root.get("entities") or root_cause_obj.get("entities")
+                    if not root_cause_obj.get("explanation"):
+                        root_cause_obj["explanation"] = det_root["explanation"]
+                    else:
+                        root_cause_obj["explanation"] = (
+                            f"{det_root['explanation']}\n\n"
+                            f"Operator-guided analysis: {root_cause_obj['explanation']}"
+                        )
+                else:
+                    root_cause_obj = det_root
+                    summary = det_root["explanation"]
+                    detailed_analysis = det_root.get("technical_explanation") or det_root["explanation"]
             elif root_cause_obj is None:
                 root_cause_obj = det_root
             else:
@@ -2795,7 +2864,10 @@ class RCAAgent(BaseAgent):
             "impacted_nodes": impacted_keys,
             "table_lineage": table_lineage,
             "downstream_consumers": downstream_consumers,
-            "refinement": None,
+            "refinement": {
+                "note": f"Re-ran RCA with operator guidance: {_operator_hint_text(extra_context)[:200] or extra_context[:200]}",
+                "operator_guidance": (extra_context or "")[:500],
+            } if extra_context else None,
             "code_analysis": code_analysis,
             "procedure_chain": procedure_chain[:3] if procedure_chain else None,
             "dq_execution_result": dq_execution_result if dq_execution_result and dq_execution_result.get("executed") else None,

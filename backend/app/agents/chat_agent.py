@@ -17,8 +17,12 @@ _RCA_CORRECTION_KEYS = (
     "this is wrong", "it's wrong", "its wrong", "wrong root", "wrong rca",
     "wrong cause", "look deeper", "go deeper", "dig deeper", "exact root",
     "exact cause", "find the exact", "missed the root", "not the root",
-    "re-run rca", "rerun rca", "reanalyze", "re-analyze", "actual root",
-    "real root", "true root", "different root", "another root",
+    "re-run rca", "rerun rca", "re run rca", "re run this rca",
+    "reanalyze", "re-analyze", "re analyze",
+    "run rca again", "run again", "redo rca", "try again",
+    "actual root", "real root", "true root", "different root", "another root",
+    "with these suggestions", "with this suggestion", "with my suggestion",
+    "validate the", "check the", "check this",
 )
 
 _BARE_RCA_REQUESTS = {
@@ -84,11 +88,23 @@ def _build_rca_extra_context(message: str, context: Optional[Dict[str, Any]] = N
             f"- Tables: {tables}"
         )
     if correction:
-        parts.append(
-            "INSTRUCTION: The operator rejected the previous root cause. "
-            "Do NOT repeat that conclusion. Find a more specific or different exact "
-            "root cause from SQL, procedure, and table evidence."
-        )
+        rejection = any(k in message.lower() for k in (
+            "not correct", "incorrect", "not right", "wrong", "missed",
+            "not the root",
+        ))
+        if rejection:
+            parts.append(
+                "INSTRUCTION: The operator rejected the previous root cause. "
+                "Do NOT repeat that conclusion. Find a more specific or different exact "
+                "root cause from SQL, procedure, and table evidence."
+            )
+        else:
+            parts.append(
+                "INSTRUCTION: The operator is providing suggestions to refine the RCA. "
+                "Re-run the full analysis incorporating their guidance as highest-priority "
+                "direction. Focus on the specific tables, columns, or checks they mention. "
+                "Produce a fresh root cause grounded in evidence."
+            )
     return "\n".join(parts)
 
 
@@ -135,7 +151,9 @@ def _detect_intent(msg: str, context: Optional[Dict[str, Any]] = None) -> str:
 
     if _is_rca_correction(m):
         return "run_rca"
-    if any(k in m for k in ("also check", "what about", "consider", "rerun rca", "re-run rca", "refine")):
+    if any(k in m for k in ("also check", "what about", "consider",
+                             "rerun rca", "re-run rca", "re run rca",
+                             "run rca again", "redo rca", "refine")):
         return "run_rca"
     if any(k in m for k in ("rca", "root cause", "why did", "why is", "analyze")):
         return "run_rca"
@@ -308,6 +326,7 @@ class ChatAgent(BaseAgent):
         date_from, date_to = _dates_from_context(context)
         payload = RCAAgent().analyze(
             pipeline_id, extra_context=extra, date_from=date_from, date_to=date_to,
+            include_narrative=True,
         )
         fallback = self._format_rca_reply(payload, extra, refined=bool(extra))
         return payload, extra, fallback
