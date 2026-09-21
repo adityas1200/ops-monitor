@@ -38,8 +38,13 @@ class Orchestrator:
         return self.monitoring.dq_summary(date_from, date_to, revalidate=revalidate)
 
     def run_rca(self, pipeline_id: str, extra_context: Optional[str] = None,
-                date_from: Optional[str] = None, date_to: Optional[str] = None) -> Dict[str, Any]:
-        return self.rca.analyze(pipeline_id, extra_context, date_from=date_from, date_to=date_to)
+                date_from: Optional[str] = None, date_to: Optional[str] = None,
+                include_lineage: bool = True) -> Dict[str, Any]:
+        return self.rca.analyze(
+            pipeline_id, extra_context,
+            date_from=date_from, date_to=date_to,
+            include_lineage=include_lineage,
+        )
 
     def suggest_fix(self, pipeline_id: str, incident_id: Optional[str] = None,
                     user_edit: Optional[str] = None,

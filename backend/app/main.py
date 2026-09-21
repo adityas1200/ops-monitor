@@ -217,6 +217,25 @@ def pipeline_logs(pipeline_id: str):
 
 
 # ---- RCA --------------------------------------------------------------
+def _rca_http_error(result: Dict[str, Any]) -> None:
+    """Raise HTTP 404 only for explicit RCA lookup misses (not analysis failures)."""
+    if not isinstance(result, dict) or not result.get("error"):
+        return
+    code = str(result.get("error_code") or "")
+    if code not in ("DQ_CHECK_NOT_FOUND", "PIPELINE_NOT_FOUND"):
+        return
+    raise HTTPException(
+        status_code=404,
+        detail={
+            "error": str(result["error"]),
+            "error_code": code,
+            "pipeline_id": result.get("pipeline_id"),
+            "date_from": result.get("date_from"),
+            "date_to": result.get("date_to"),
+        },
+    )
+
+
 @app.post("/api/rca")
 def rca(req: RCARequest):
     # #region agent log
@@ -247,6 +266,7 @@ def rca(req: RCARequest):
     except Exception:
         pass
     # #endregion
+    _rca_http_error(result or {})
     return result
 
 

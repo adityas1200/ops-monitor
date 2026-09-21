@@ -9,8 +9,14 @@ async function req(path, opts = {}) {
     let detail = `${res.status} ${res.statusText}`
     try {
       const body = await res.json()
-      detail = body.detail ?? body.error ?? detail
-      if (Array.isArray(detail)) detail = detail.map((d) => d.msg || d).join('; ')
+      const raw = body.detail ?? body.error ?? detail
+      if (typeof raw === 'string') {
+        detail = raw
+      } else if (Array.isArray(raw)) {
+        detail = raw.map((d) => d.msg || d).join('; ')
+      } else if (raw && typeof raw === 'object') {
+        detail = raw.error || raw.message || JSON.stringify(raw)
+      }
     } catch { /* ignore */ }
     const err = new Error(typeof detail === 'string' ? detail : JSON.stringify(detail))
     err.status = res.status

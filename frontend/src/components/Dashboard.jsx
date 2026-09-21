@@ -4,14 +4,28 @@ import ChatFab from './ChatFab'
 import { KpiSkeleton, LoadingOverlay, TableSkeleton } from './LoadingIndicator'
 
 const DQ_KPI_DEFS = [
+  ['total', 'Total'],
   ['success', 'Passed'], ['failed', 'Failed'], ['warning', 'Warning'],
-  ['skipped', 'Skipped'], ['running', 'Running'], ['total', 'Total'],
+  ['skipped', 'Skipped'], ['running', 'Running'],
 ]
 
 const TASK_KPI_DEFS = [
+  ['total', 'Total'],
   ['success', 'Successful'], ['failed', 'Failed'], ['delayed', 'Delayed'],
-  ['skipped', 'Skipped'], ['running', 'Running'], ['total', 'Total'],
+  ['skipped', 'Skipped'], ['running', 'Running'], ['scheduled', 'Scheduled'],
 ]
+
+/** Map KPI card keys → status dropdown values (same filters as the Status select). */
+const KPI_KEY_TO_STATUS = {
+  total: 'ALL',
+  success: 'SUCCESS',
+  failed: 'FAILED',
+  delayed: 'DELAYED',
+  warning: 'WARNING',
+  skipped: 'SKIPPED',
+  running: 'RUNNING',
+  scheduled: 'SCHEDULED',
+}
 
 /** Default lookback: past 3 days including today. */
 function defaultDateFromISO() {
@@ -23,12 +37,15 @@ const STATUS_ALIASES = {
   SUCCESS: ['SUCCESS', 'SUCCEEDED', 'PASS', 'PASSED', 'OK'],
   FAILED: ['FAILED', 'FAIL', 'TIMEOUT', 'FAILED_AND_AUTO_SUSPENDED', 'ERROR'],
   SKIPPED: ['SKIPPED', 'SKIP', 'CANCELLED'],
-  RUNNING: ['RUNNING', 'EXECUTING', 'SCHEDULED', 'PENDING'],
+  RUNNING: ['RUNNING', 'EXECUTING', 'PENDING'],
+  SCHEDULED: ['SCHEDULED', 'PLANNED'],
   DELAYED: ['DELAYED'],
   WARNING: ['WARNING', 'WARN'],
 }
 
-const STATUS_PRIORITY = { FAILED: 0, WARNING: 1, DELAYED: 1, RUNNING: 2, SKIPPED: 3, SUCCESS: 4 }
+const STATUS_PRIORITY = {
+  FAILED: 0, WARNING: 1, DELAYED: 1, RUNNING: 2, SCHEDULED: 2.5, SKIPPED: 3, SUCCESS: 4,
+}
 
 function getStatusPriority(s) {
   const upper = (s || '').toUpperCase()
@@ -49,9 +66,9 @@ function sortRows(rows, sortCol, sortDir) {
     } else if (sortCol === 'duration_s') {
       av = a.duration_s ?? -1
       bv = b.duration_s ?? -1
-    } else if (sortCol === 'run_at') {
-      av = a.run_at || ''
-      bv = b.run_at || ''
+    } else if (sortCol === 'run_at' || sortCol === 'started_at' || sortCol === 'ended_at') {
+      av = a[sortCol] || ''
+      bv = b[sortCol] || ''
     } else {
       av = (a[sortCol] || '').toLowerCase()
       bv = (b[sortCol] || '').toLowerCase()
@@ -111,21 +128,61 @@ function matchesTaskTextFilter(pipeline, nameFilter) {
   return haystack.some((v) => v.includes(needle))
 }
 
-function KpiBar({ kpis, defs }) {
+function KpiBar({ kpis, defs, status = 'ALL', onStatusChange }) {
   const items = defs || DQ_KPI_DEFS
+  // Total is only highlighted after an explicit click on Total — not when
+  // status returns to ALL via deselecting another KPI (or on initial load).
+  const [totalSelected, setTotalSelected] = useState(false)
+
+  useEffect(() => {
+    if (status !== 'ALL') setTotalSelected(false)
+  }, [status])
+
   return (
-    <div className="kpis">
-      {items.map(([k, label]) => (
-        <div key={k} className={`kpi ${k}`}>
-          <div className="v">{kpis[k] ?? '—'}</div>
-          <div className="l">{label}</div>
-        </div>
-      ))}
+    <div className="kpis" role="group" aria-label="Status filters">
+      {items.map(([k, label]) => {
+        const filterStatus = KPI_KEY_TO_STATUS[k] || 'ALL'
+        const selected = filterStatus === 'ALL'
+          ? status === 'ALL' && totalSelected
+          : status === filterStatus
+        return (
+          <button
+            key={k}
+            type="button"
+            className={`kpi ${k}${selected ? ' is-selected' : ''}`}
+            aria-pressed={selected}
+            title={filterStatus === 'ALL' ? 'Show all' : `Filter: ${label}`}
+            onClick={() => {
+              if (!onStatusChange) return
+              if (filterStatus === 'ALL') {
+                if (status === 'ALL' && totalSelected) {
+                  setTotalSelected(false)
+                  return
+                }
+                setTotalSelected(true)
+                onStatusChange('ALL')
+                return
+              }
+              // Re-click active status KPI → ALL, without highlighting Total
+              if (status === filterStatus) {
+                setTotalSelected(false)
+                onStatusChange('ALL')
+                return
+              }
+              setTotalSelected(false)
+              onStatusChange(filterStatus)
+            }}
+          >
+            <div className="v">{kpis[k] ?? '—'}</div>
+            <div className="l">{label}</div>
+          </button>
+        )
+      })}
     </div>
   )
 }
 
-function TasksView({ data, status, nameFilter, loading, configured, onRunRCA, onSelect }) {
+function TasksView({ data, status, onStatusChange, nameFilter, loading, configured, onRunRCA, onSelect }) {
   const allPipelines = data?.all_pipelines || data?.pipelines || []
   const [sortCol, setSortCol] = useState('status')
   const [sortDir, setSortDir] = useState('asc')
@@ -151,9 +208,18 @@ function TasksView({ data, status, nameFilter, loading, configured, onRunRCA, on
 
   return (
     <LoadingOverlay active={loading} label="Loading task monitoring data">
-      {showSkeleton ? <KpiSkeleton /> : <KpiBar kpis={data?.kpis || {}} defs={TASK_KPI_DEFS} />}
       {showSkeleton ? (
-        <TableSkeleton rows={8} cols={6} />
+        <KpiSkeleton count={TASK_KPI_DEFS.length} />
+      ) : (
+        <KpiBar
+          kpis={data?.kpis || {}}
+          defs={TASK_KPI_DEFS}
+          status={status}
+          onStatusChange={onStatusChange}
+        />
+      )}
+      {showSkeleton ? (
+        <TableSkeleton rows={8} cols={8} />
       ) : (
         <table>
         <thead>
@@ -161,6 +227,8 @@ function TasksView({ data, status, nameFilter, loading, configured, onRunRCA, on
             <SortableHeader label="Pipeline / Task" colKey="name" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
             <SortableHeader label="Platform" colKey="platform" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
             <SortableHeader label="Status" colKey="status" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+            <SortableHeader label="Started" colKey="started_at" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+            <SortableHeader label="Ended" colKey="ended_at" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
             <SortableHeader label="Duration" colKey="duration_s" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
             <th>Error</th><th></th>
           </tr>
@@ -171,6 +239,8 @@ function TasksView({ data, status, nameFilter, loading, configured, onRunRCA, on
               <td>{p.name}</td>
               <td><span className="pill">{p.platform}</span></td>
               <td><span className={`badge ${p.status}`}>{p.status}</span></td>
+              <td className="muted" style={{ whiteSpace: 'nowrap' }}>{p.started_at ? formatRunAt(p.started_at) : '—'}</td>
+              <td className="muted" style={{ whiteSpace: 'nowrap' }}>{p.ended_at ? formatRunAt(p.ended_at) : '—'}</td>
               <td>{p.duration_s != null ? `${p.duration_s}s` : '—'}</td>
               <td className="muted" style={{ maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {p.error || '—'}
@@ -184,7 +254,7 @@ function TasksView({ data, status, nameFilter, loading, configured, onRunRCA, on
           ))}
           {rows.length === 0 && !loading && (
             <tr>
-              <td colSpan={6} className="muted">
+              <td colSpan={8} className="muted">
                 {configured
                   ? status === 'ALL'
                     ? 'No tasks in the selected date range.'
@@ -296,7 +366,7 @@ function DQDetailPopup({ qcId, subjectArea, onClose }) {
   )
 }
 
-function DQView({ data, status, nameFilter, loading, configured, onSelect, onRunRCA }) {
+function DQView({ data, status, onStatusChange, nameFilter, loading, configured, onSelect, onRunRCA }) {
   const allChecks = data?.all_checks || []
   const [sortCol, setSortCol] = useState('status')
   const [sortDir, setSortDir] = useState('asc')
@@ -328,9 +398,18 @@ function DQView({ data, status, nameFilter, loading, configured, onSelect, onRun
           <strong>Source:</strong> <code>{data.table}</code>
         </p>
       )}
-      {showSkeleton ? <KpiSkeleton /> : <KpiBar kpis={data?.kpis || {}} defs={DQ_KPI_DEFS} />}
       {showSkeleton ? (
-        <TableSkeleton rows={8} cols={6} />
+        <KpiSkeleton count={DQ_KPI_DEFS.length} />
+      ) : (
+        <KpiBar
+          kpis={data?.kpis || {}}
+          defs={DQ_KPI_DEFS}
+          status={status}
+          onStatusChange={onStatusChange}
+        />
+      )}
+      {showSkeleton ? (
+        <TableSkeleton rows={8} cols={5} />
       ) : (
         <table>
         <thead>
@@ -339,7 +418,6 @@ function DQView({ data, status, nameFilter, loading, configured, onSelect, onRun
             <SortableHeader label="Subject Area" colKey="table_name" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
             <SortableHeader label="Check Type" colKey="column_name" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
             <SortableHeader label="Status" colKey="status" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
-            <SortableHeader label="Run at" colKey="run_at" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
             <th>Details</th><th></th>
           </tr>
         </thead>
@@ -350,7 +428,6 @@ function DQView({ data, status, nameFilter, loading, configured, onSelect, onRun
               <td>{c.table_name || '—'}</td>
               <td>{c.column_name || '—'}</td>
               <td><span className={`badge ${c.status}`}>{c.status}</span></td>
-              <td>{c.run_at ? formatRunAt(c.run_at) : '—'}</td>
               <td className="muted" style={{ maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {c.error || '—'}
               </td>
@@ -365,7 +442,7 @@ function DQView({ data, status, nameFilter, loading, configured, onSelect, onRun
           ))}
           {rows.length === 0 && !loading && (
             <tr>
-              <td colSpan={7} className="muted">
+              <td colSpan={6} className="muted">
                 {!configured
                   ? 'Configure Snowflake in Settings to load DQ results.'
                   : data?.errors?.length
@@ -450,7 +527,7 @@ export default function Dashboard({
     const promise = api.summary({ status: 'ALL', date_from: fromIso, date_to: toIso })
       .then((d) => {
         if (!d.live_only) {
-          setTaskData({ ...d, all_pipelines: [], kpis: { success: 0, failed: 0, delayed: 0, skipped: 0, running: 0, total: 0 } })
+          setTaskData({ ...d, all_pipelines: [], kpis: { success: 0, failed: 0, delayed: 0, skipped: 0, running: 0, scheduled: 0, total: 0 } })
           setTaskLoadError('Stale backend — restart the server on port 8001.')
           onReportErrorRef.current?.({ tab: 'Dashboard', action: 'load task data', error: 'Stale backend — restart on port 8001.' })
           return
@@ -619,7 +696,7 @@ export default function Dashboard({
           onChange={(e) => (subTab === 'tasks' ? setTaskStatus : setDqStatus)(e.target.value)}
         >
           {(subTab === 'tasks'
-            ? ['FAILED', 'DELAYED', 'SUCCESS', 'SKIPPED', 'RUNNING', 'ALL']
+            ? ['FAILED', 'DELAYED', 'SUCCESS', 'SKIPPED', 'RUNNING', 'SCHEDULED', 'ALL']
             : ['FAILED', 'WARNING', 'SUCCESS', 'SKIPPED', 'RUNNING', 'ALL']
           ).map((s) => <option key={s}>{s}</option>)}
         </select>
@@ -668,6 +745,7 @@ export default function Dashboard({
         <TasksView
           data={taskData}
           status={taskStatus}
+          onStatusChange={setTaskStatus}
           nameFilter={debouncedNameFilter}
           loading={taskLoading}
           configured={configured}
@@ -685,6 +763,7 @@ export default function Dashboard({
           nameFilter={debouncedNameFilter}
           data={dqData}
           status={dqStatus}
+          onStatusChange={setDqStatus}
           loading={dqLoading}
           configured={configured}
           onSelect={onSelect}

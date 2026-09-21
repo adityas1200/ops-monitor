@@ -45,7 +45,7 @@ class MonitoringAgent(BaseAgent):
             self._connector_errors.append({"platform": "snowflake", "error": sf.last_error})
         if aws.last_error:
             self._connector_errors.append({"platform": "aws", "error": aws.last_error})
-        # de-dup by id, preserve order
+        # de-dup by id, then keep latest run per task identity (name+platform+db+schema)
         seen, merged = set(), []
         for r in records:
             if r["id"] in seen:
@@ -54,8 +54,40 @@ class MonitoringAgent(BaseAgent):
                 continue
             seen.add(r["id"])
             merged.append(self._flag_delay(r))
+        merged = self._latest_per_task(merged)
         _COLLECT_CACHE.update({"key": cache_key, "ts": now, "records": merged, "filled": True})
         return merged
+
+    @staticmethod
+    def _latest_per_task(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """One historical run + one planned (SCHEDULED) row per task identity."""
+        best: Dict[tuple, Dict[str, Any]] = {}
+        order: List[tuple] = []
+        for r in records:
+            is_planned = (
+                r.get("status") == "SCHEDULED"
+                or str(r.get("record_type") or "").upper() == "SCHEDULED"
+            )
+            bucket = "scheduled" if is_planned else "run"
+            key = (
+                r.get("platform"),
+                r.get("database") or "",
+                r.get("schema") or "",
+                r.get("name") or "",
+                bucket,
+            )
+            prev = best.get(key)
+            if prev is None:
+                best[key] = r
+                order.append(key)
+                continue
+            # Runs: keep most recent; planned: keep soonest upcoming.
+            if bucket == "scheduled":
+                if (r.get("started_at") or "") < (prev.get("started_at") or "\uffff"):
+                    best[key] = r
+            elif (r.get("started_at") or "") > (prev.get("started_at") or ""):
+                best[key] = r
+        return [best[k] for k in order]
 
     def _flag_delay(self, r: Dict[str, Any]) -> Dict[str, Any]:
         """Mark DELAYED if duration breaches SLA and not already a failure/skip."""
@@ -68,9 +100,14 @@ class MonitoringAgent(BaseAgent):
                 date_from: Optional[str] = None, date_to: Optional[str] = None) -> Dict[str, Any]:
         pipelines = self.collect(date_from, date_to)
 
-        kpis = {"success": 0, "failed": 0, "delayed": 0, "skipped": 0, "running": 0, "total": len(pipelines)}
-        key = {"SUCCESS": "success", "FAILED": "failed", "DELAYED": "delayed",
-               "SKIPPED": "skipped", "RUNNING": "running"}
+        kpis = {
+            "success": 0, "failed": 0, "delayed": 0, "skipped": 0,
+            "running": 0, "scheduled": 0, "total": len(pipelines),
+        }
+        key = {
+            "SUCCESS": "success", "FAILED": "failed", "DELAYED": "delayed",
+            "SKIPPED": "skipped", "RUNNING": "running", "SCHEDULED": "scheduled",
+        }
         for p in pipelines:
             kpis[key.get(p["status"], "running")] += 1
 

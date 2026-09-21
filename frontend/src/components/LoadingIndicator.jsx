@@ -19,10 +19,10 @@ export function LoadingOverlay({ active, label, children }) {
   )
 }
 
-export function KpiSkeleton() {
+export function KpiSkeleton({ count = 6 }) {
   return (
     <div className="kpis" aria-hidden="true">
-      {Array.from({ length: 6 }, (_, i) => (
+      {Array.from({ length: count }, (_, i) => (
         <div key={i} className="kpi kpi-skeleton">
           <div className="skeleton-block skeleton-value" />
           <div className="skeleton-block skeleton-label" />

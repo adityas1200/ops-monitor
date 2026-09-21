@@ -34,6 +34,57 @@ def _ts(value: Any) -> Optional[str]:
     return str(value)
 
 
+def _task_result_case_sql() -> str:
+    return """
+                        CASE
+                            WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'
+                            WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'
+                            WHEN UPPER(STATE) IN ('SKIPPED', 'SKIP')   THEN 'SKIP'
+                            WHEN UPPER(STATE) IN ('CANCELLED', 'CANCELED') THEN 'SKIP'
+                            WHEN UPPER(STATE) IN ('RUNNING', 'EXECUTING') THEN 'RUNNING'
+                            WHEN UPPER(STATE) = 'SCHEDULED'            THEN 'SCHEDULED'
+                            ELSE 'OTHER'
+                        END
+    """.strip()
+
+
+def _is_scheduled_row(state: Any, task_result: Any, record_type: Any) -> bool:
+    return (
+        str(record_type or "").strip().upper() == "SCHEDULED"
+        or str(state or "").strip().upper() == "SCHEDULED"
+        or str(task_result or "").strip().upper() == "SCHEDULED"
+    )
+
+
+def _record_from_task_row(row: tuple) -> Dict[str, Any]:
+    (task_name, database_name, schema_name, state, task_result, scheduled_time,
+     query_start_time, completed_time, query_id, error_code, error_message,
+     record_type, duration_s) = row
+    sched_key = _ts(scheduled_time) or "unknown"
+    status = normalize_task_result(task_result, state, done=completed_time, error=error_message)
+    return {
+        "id": f"sf_{task_name}_{sched_key}",
+        "name": f"SF Task: {task_name}",
+        "platform": "snowflake",
+        "status": status,
+        "database": database_name,
+        "schema": schema_name,
+        "record_type": record_type,
+        "task_result": task_result,
+        "started_at": _ts(scheduled_time),
+        "query_start_at": _ts(query_start_time),
+        "ended_at": _ts(completed_time),
+        "duration_s": duration_s,
+        "error": error_message,
+        "error_code": error_code,
+        "query_id": query_id,
+        "upstream": [],
+        "downstream": [],
+        "log_ref": f"snowflake://task/{database_name}.{schema_name}.{task_name}",
+        "source": "live",
+    }
+
+
 _shared_conn = None
 _shared_conn_params_key: Optional[str] = None
 _shared_conn_warmed_at: Optional[float] = None
@@ -495,13 +546,7 @@ class SnowflakeConnector:
                         DATABASE_NAME,
                         SCHEMA_NAME,
                         STATE,
-                        CASE
-                            WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'
-                            WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'
-                            WHEN UPPER(STATE) IN ('RUNNING', 'EXECUTING') THEN 'RUNNING'
-                            WHEN UPPER(STATE) = 'SCHEDULED'            THEN 'SCHEDULED'
-                            ELSE 'OTHER'
-                        END AS TASK_RESULT,
+                        {_task_result_case_sql()} AS TASK_RESULT,
                         SCHEDULED_TIME,
                         QUERY_START_TIME,
                         COMPLETED_TIME,
@@ -512,7 +557,11 @@ class SnowflakeConnector:
                             WHEN UPPER(STATE) = 'SCHEDULED' THEN 'SCHEDULED'
                             ELSE 'HISTORICAL'
                         END AS RECORD_TYPE,
-                        DATEDIFF('second', QUERY_START_TIME, COMPLETED_TIME) AS DURATION_S
+                        DATEDIFF(
+                            'second',
+                            COALESCE(QUERY_START_TIME, SCHEDULED_TIME),
+                            COMPLETED_TIME
+                        ) AS DURATION_S
                     FROM TABLE(
                         INFORMATION_SCHEMA.TASK_HISTORY(
                             SCHEDULED_TIME_RANGE_START => %s::TIMESTAMP_LTZ,
@@ -531,16 +580,14 @@ class SnowflakeConnector:
                 sql = f"""
                 SELECT
                     TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE,
-                    CASE
-                        WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'
-                        WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'
-                        WHEN UPPER(STATE) IN ('RUNNING', 'EXECUTING') THEN 'RUNNING'
-                        WHEN UPPER(STATE) = 'SCHEDULED'            THEN 'SCHEDULED'
-                        ELSE 'OTHER'
-                    END AS TASK_RESULT,
+                    {_task_result_case_sql()} AS TASK_RESULT,
                     SCHEDULED_TIME, QUERY_START_TIME, COMPLETED_TIME,
                     QUERY_ID, ERROR_CODE, ERROR_MESSAGE, RECORD_TYPE,
-                    DATEDIFF('second', QUERY_START_TIME, COMPLETED_TIME) AS DURATION_S
+                    DATEDIFF(
+                        'second',
+                        COALESCE(QUERY_START_TIME, SCHEDULED_TIME),
+                        COMPLETED_TIME
+                    ) AS DURATION_S
                 FROM (
                     SELECT
                         NAME AS TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE, QUERY_ID,
@@ -561,7 +608,44 @@ class SnowflakeConnector:
                 )
                 ORDER BY TASK_NAME, SCHEDULED_TIME DESC
                 """
+            # Upcoming SCHEDULED rows live in INFORMATION_SCHEMA (ACCOUNT_USAGE lags / omits them).
+            # Cap to 7 days (Snowflake limit) and settings future_days.
+            sched_horizon = min(max(1, int(future_days or 1)), 7)
+            sched_start = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+            sched_end = (datetime.now(timezone.utc) + timedelta(days=sched_horizon)).strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
+            sched_params = (sched_start, sched_end, monitor_db, name_pattern)
+            sched_sql = f"""
+                SELECT
+                    NAME AS TASK_NAME,
+                    DATABASE_NAME,
+                    SCHEMA_NAME,
+                    STATE,
+                    {_task_result_case_sql()} AS TASK_RESULT,
+                    SCHEDULED_TIME,
+                    QUERY_START_TIME,
+                    COMPLETED_TIME,
+                    QUERY_ID,
+                    ERROR_CODE,
+                    ERROR_MESSAGE,
+                    'SCHEDULED' AS RECORD_TYPE,
+                    NULL AS DURATION_S
+                FROM TABLE(
+                    INFORMATION_SCHEMA.TASK_HISTORY(
+                        SCHEDULED_TIME_RANGE_START => %s::TIMESTAMP_LTZ,
+                        SCHEDULED_TIME_RANGE_END   => %s::TIMESTAMP_LTZ,
+                        RESULT_LIMIT => {_TASK_HISTORY_RESULT_LIMIT}
+                    )
+                )
+                WHERE DATABASE_NAME = %s
+                  AND NAME ILIKE %s
+                  AND UPPER(STATE) = 'SCHEDULED'
+                  AND SCHEDULED_TIME >= CURRENT_TIMESTAMP()
+                ORDER BY TASK_NAME, SCHEDULED_TIME ASC
+            """
             log_sql(sql[:500], "monitoring:telemetry", "READ", allowed=True)
+            log_sql(sched_sql[:500], "monitoring:scheduled", "READ", allowed=True)
             # Serialize: shared connection cannot run overlapping cursors.
             with _query_lock:
                 cur.execute(
@@ -579,6 +663,8 @@ class SnowflakeConnector:
                 try:
                     cur.execute(sql, params)
                     rows = cur.fetchall()
+                    cur.execute(sched_sql, sched_params)
+                    sched_rows = cur.fetchall()
                 finally:
                     if (
                         switched_wh
@@ -589,33 +675,28 @@ class SnowflakeConnector:
                             cur.execute(f"USE WAREHOUSE {session_wh}")
                         except Exception:
                             pass
+            # Latest completed/skipped/failed/running run per task (exclude planned).
+            seen_runs = set()
             for row in rows:
-                (task_name, database_name, schema_name, state, task_result, scheduled_time,
-                 query_start_time, completed_time, query_id, error_code, error_message,
-                 record_type, duration_s) = row
-                sched_key = _ts(scheduled_time) or "unknown"
-                status = normalize_task_result(task_result, state, done=completed_time, error=error_message)
-                records.append({
-                    "id": f"sf_{task_name}_{sched_key}",
-                    "name": f"SF Task: {task_name}",
-                    "platform": "snowflake",
-                    "status": status,
-                    "database": database_name,
-                    "schema": schema_name,
-                    "record_type": record_type,
-                    "task_result": task_result,
-                    "started_at": _ts(scheduled_time),
-                    "query_start_at": _ts(query_start_time),
-                    "ended_at": _ts(completed_time),
-                    "duration_s": duration_s,
-                    "error": error_message,
-                    "error_code": error_code,
-                    "query_id": query_id,
-                    "upstream": [],
-                    "downstream": [],
-                    "log_ref": f"snowflake://task/{database_name}.{schema_name}.{task_name}",
-                    "source": "live",
-                })
+                rec = _record_from_task_row(row)
+                if _is_scheduled_row(row[3], row[4], row[11]):
+                    continue
+                task_key = (rec.get("database"), rec.get("schema"), row[0])
+                if task_key in seen_runs:
+                    continue
+                seen_runs.add(task_key)
+                records.append(rec)
+            # Next upcoming planned run per task (ORDER BY SCHEDULED_TIME ASC).
+            seen_sched = set()
+            for row in sched_rows:
+                rec = _record_from_task_row(row)
+                rec["status"] = "SCHEDULED"
+                rec["record_type"] = "SCHEDULED"
+                task_key = (rec.get("database"), rec.get("schema"), row[0])
+                if task_key in seen_sched:
+                    continue
+                seen_sched.add(task_key)
+                records.append(rec)
         except Exception as e:  # noqa: BLE001
             self.last_error = str(e)
             self._conn = None

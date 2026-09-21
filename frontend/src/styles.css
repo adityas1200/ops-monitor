@@ -307,14 +307,77 @@ button { font-family: inherit; cursor: pointer; }
 }
 
 /* ---- KPI cards ----------------------------------------------------- */
-.kpis { display: grid; grid-template-columns: repeat(6, 1fr); gap: 14px; margin-bottom: 18px; }
-.kpi { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
-.kpi .v { font-size: 30px; font-weight: 700; }
-.kpi .l { color: var(--muted); font-size: 13px; font-weight: 700; margin-top: 4px; }
+.kpis {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: 8px;
+  margin-bottom: 18px;
+  width: 100%;
+  min-width: 0;
+}
+.kpi {
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: none;
+  box-sizing: border-box;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 8px;
+  overflow: hidden;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  transition: background-color .15s ease, border-color .15s ease, box-shadow .15s ease;
+}
+button.kpi {
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+}
+.kpi:hover {
+  background: var(--panel2);
+}
+.kpi:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.kpi.is-selected {
+  border-color: var(--accent);
+  box-shadow: none;
+  background: color-mix(in srgb, var(--accent) 6%, var(--panel));
+}
+.kpi.is-selected:hover {
+  background: color-mix(in srgb, var(--accent) 10%, var(--panel));
+}
+.kpi .v {
+  font-size: clamp(16px, 1.6vw + 10px, 28px);
+  font-weight: 700;
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.kpi .l {
+  color: var(--muted);
+  font-size: clamp(9px, 0.7vw + 7px, 12px);
+  font-weight: 700;
+  margin-top: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .kpi.success .v { color: var(--green); } .kpi.failed .v { color: var(--red); }
 .kpi.delayed .v { color: var(--amber); } .kpi.warning .v { color: var(--amber); } .kpi.skipped .v { color: var(--grey); }
 .kpi.running .v { color: var(--accent2); }
+.kpi.scheduled .v { color: var(--accent); }
 .kpi.total .v { color: var(--accent); }
+
+/* Agent pane compresses main — keep one row, tighten cards instead of wrapping */
+.body.chat-open .kpis { gap: 6px; }
+.body.chat-open .kpis .kpi { padding: 10px 6px; }
 
 /* ---- Toolbar / inputs ---------------------------------------------- */
 .toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
@@ -362,6 +425,7 @@ tr:hover td { background: var(--panel2); }
 .badge.WARNING { background: rgba(255,181,71,.15); color: var(--amber); }
 .badge.SKIPPED { background: rgba(107,118,137,.2); color: var(--grey); }
 .badge.RUNNING { background: rgba(79,140,255,.15); color: var(--accent); }
+.badge.SCHEDULED { background: rgba(79,140,255,.08); color: var(--accent); border: 1px dashed rgba(79,140,255,.45); }
 .badge.USER_REPORTED { background: rgba(124,92,255,.15); color: var(--accent2); }
 
 /* ---- Buttons ------------------------------------------------------- */

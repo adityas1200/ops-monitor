@@ -244,6 +244,68 @@ def _format_run_date(value: Any) -> Optional[str]:
     return s
 
 
+def _run_token(value: Any) -> str:
+    """Canonical run-time token for DQ ids (YYYY-MM-DD HH:MM:SS)."""
+    s = (_format_run_date(value) or str(value or "")).strip()
+    s = s.replace("T", " ").replace("Z", "")
+    if "+" in s:
+        s = s.split("+", 1)[0].strip()
+    # Drop fractional seconds / trailing offset noise; keep wall-clock seconds.
+    if "." in s and s.index(".") > 10:
+        s = s.split(".", 1)[0]
+    return s[:19]
+
+
+def make_dq_check_id(qc_id: Any, run_date: Any) -> str:
+    """Stable DQ row id used by Dashboard and RCA."""
+    return f"dq_{qc_id}_{_run_token(run_date)}"
+
+
+def parse_dq_check_id(check_id: str) -> Optional[Tuple[str, str]]:
+    """Split ``dq_{qc}_{YYYY-MM-DD HH:MM:SS}`` into (qc_id, run_token)."""
+    needle = str(check_id or "").strip()
+    if not needle.startswith("dq_"):
+        return None
+    # Run token is always the trailing wall-clock timestamp (19 chars, space or T).
+    m = re.match(
+        r"^dq_(.+)_(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2})$",
+        needle,
+    )
+    if not m:
+        return None
+    return m.group(1), _run_token(m.group(2))
+
+
+def find_dq_check(
+    checks: List[Dict[str, Any]],
+    check_id: str,
+) -> Optional[Dict[str, Any]]:
+    """Find a DQ row by exact id, or by QC id + normalized run timestamp.
+
+    Does not guess by QC id alone — that would bind RCA to the wrong run.
+    """
+    if not check_id or not checks:
+        return None
+
+    needle = str(check_id)
+    for c in checks:
+        if c.get("id") == needle:
+            return c
+
+    parsed = parse_dq_check_id(needle)
+    if not parsed:
+        return None
+    qc_id, run_tok = parsed
+
+    for c in checks:
+        if str(c.get("name") or "") != qc_id:
+            continue
+        row_run = _run_token(c.get("run_at") or (c.get("raw") or {}).get("RUN_DATE"))
+        if row_run == run_tok:
+            return c
+    return None
+
+
 def _row_status(status: Any, pass_count: Any, fail_count: Any) -> str:
     """Map recorded DQ engine status + pass/fail counts.
 
@@ -375,14 +437,15 @@ class DQConnector:
             for i, row in enumerate(cur.fetchall()):
                 run_date, qc_id, subject_area, check_type, pass_count, fail_count, status, description = row
                 qc_key = str(qc_id or f"check_{i}")
+                run_at = _format_run_date(run_date)
                 records.append({
-                    "id": f"dq_{qc_key}_{run_date}",
+                    "id": make_dq_check_id(qc_key, run_date),
                     "name": qc_key,
                     "platform": "snowflake",
                     "status": _row_status(status, pass_count, fail_count),
                     "table_name": str(subject_area) if subject_area is not None else None,
                     "column_name": str(check_type) if check_type is not None else None,
-                    "run_at": _format_run_date(run_date),
+                    "run_at": run_at,
                     "error": _detail_text(description, pass_count, fail_count),
                     "pass_count": pass_count,
                     "fail_count": fail_count,
@@ -408,6 +471,95 @@ class DQConnector:
         if revalidate and records:
             self._revalidate_failures(records)
         return records
+
+    def _row_from_sql(self, row: tuple, index: int = 0) -> Dict[str, Any]:
+        run_date, qc_id, subject_area, check_type, pass_count, fail_count, status, description = row
+        qc_key = str(qc_id or f"check_{index}")
+        run_at = _format_run_date(run_date)
+        return {
+            "id": make_dq_check_id(qc_key, run_date),
+            "name": qc_key,
+            "platform": "snowflake",
+            "status": _row_status(status, pass_count, fail_count),
+            "table_name": str(subject_area) if subject_area is not None else None,
+            "column_name": str(check_type) if check_type is not None else None,
+            "run_at": run_at,
+            "error": _detail_text(description, pass_count, fail_count),
+            "pass_count": pass_count,
+            "fail_count": fail_count,
+            "source": "live",
+            "raw": {
+                "RUN_DATE": run_date,
+                "QC_ID": qc_id,
+                "SUBJECT_AREA": subject_area,
+                "CHECK_TYPE": check_type,
+                "PASS_COUNT": pass_count,
+                "FAIL_COUNT": fail_count,
+                "STATUS": status,
+                "QC_DESCRIPTION": description,
+            },
+        }
+
+    def fetch_check_by_id(
+        self,
+        check_id: str,
+        date_from: Optional[str] = None,
+        date_to: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Load one DQ validation row by Dashboard/RCA id (QC + run timestamp).
+
+        Avoids the LIMIT 500 blind spot in ``read_results`` when many newer rows
+        push an older QC out of the windowed scan.
+        """
+        parsed = parse_dq_check_id(check_id)
+        if not parsed or not self._configured():
+            return None
+        qc_id, run_tok = parsed
+        dq_cfg = get_dq_monitoring_config(self.settings)
+        table_fqn = dq_cfg["table_fqn"]
+        try:
+            cur = self.sf._connect().cursor()
+            sql = f"""
+                SELECT
+                    RUN_DATE,
+                    QC_ID,
+                    SUBJECT_AREA,
+                    CHECK_TYPE,
+                    PASS_COUNT,
+                    FAIL_COUNT,
+                    STATUS,
+                    QC_DESCRIPTION
+                FROM {table_fqn}
+                WHERE CAST(QC_ID AS VARCHAR) = %s
+            """
+            params: List[Any] = [qc_id]
+            if date_from:
+                sql += f" AND {_RUN_DATE_TS_SQL} >= %s::TIMESTAMP_LTZ"
+                params.append(date_from)
+            if date_to:
+                sql += f" AND {_RUN_DATE_TS_SQL} <= %s::TIMESTAMP_LTZ"
+                params.append(date_to)
+            sql += f"""
+                ORDER BY {_RUN_DATE_TS_SQL} DESC NULLS LAST
+                LIMIT 50
+            """
+            log_sql(sql[:300], "dq_connector:fetch_check_by_id", "READ", allowed=True)
+            cur.execute(sql, params)
+            rows = cur.fetchall() or []
+        except Exception as e:  # noqa: BLE001
+            self.last_error = str(e)
+            self.sf._conn = None
+            return None
+
+        records = [self._row_from_sql(row, i) for i, row in enumerate(rows)]
+        hit = find_dq_check(records, check_id)
+        if hit:
+            return hit
+        # Exact run missing (clock/format drift): only accept if a single QC row
+        # exists in-window — never pick an arbitrary newer run when several exist.
+        if len(records) == 1 and str(records[0].get("name") or "") == qc_id:
+            return records[0]
+        return None
 
     def fetch_dq_rule_sql(self, qc_id: str, subject_area: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """Fetch a DQ rule definition for a QC ID (+ Subject Area).

@@ -990,17 +990,30 @@ class RCAAgent(BaseAgent):
                     val = raw_val.strip().split()[0] if raw_val.strip() else ""
                     if not key:
                         continue
-                    # Column name + value (even single-digit) must both appear.
                     if key in t and val and val in t:
                         return True
                     if f"{key}={val}" in t_compact:
                         return True
+                    # Comma-formatted number variant.
+                    try:
+                        comma_val = f"{int(val):,}".lower()
+                        if comma_val != val and key in t and comma_val in t:
+                            return True
+                    except (ValueError, TypeError):
+                        pass
 
         for kv in evidence.get("key_values") or []:
             s = str(kv).strip().lower()
             # Long grain keys (CLAIM_ID, territory names) — short digits alone are weak.
             if s and len(s) >= 2 and s in t:
                 return True
+            # Comma-formatted number variant (LLM often writes "1,230" for 1230).
+            try:
+                comma = f"{int(s):,}".lower()
+                if comma != s and comma in t:
+                    return True
+            except (ValueError, TypeError):
+                pass
 
         summary = str(evidence.get("evidence_summary") or "").strip().lower()
         if summary and len(summary) >= 20 and summary[:80] in t:
@@ -1054,18 +1067,38 @@ class RCAAgent(BaseAgent):
                 f"the analytics fact and the targets dimension. Key finding: {top}."
             )
         else:
-            explanation = (
-                f"DQ check '{label}' fails because live evidence shows {n} offending row(s). "
-                f"Top finding: {top}. "
-                f"Full evidence: {summary}"
+            # Extract actual violation count from count-column evidence
+            # (the result-set row count n is often 1 summary row, not the real count).
+            violation_n = None
+            for fact in facts:
+                for ck in ("VIOLATION_COUNT", "FAIL_COUNT", "EXCEPTION_COUNT",
+                           "MISMATCH_COUNT", "FAILED_COUNT"):
+                    m_vc = re.search(rf"{ck}\s*=\s*(\d+)", str(fact).upper())
+                    if m_vc:
+                        violation_n = int(m_vc.group(1))
+                        break
+                if violation_n is not None:
+                    break
+            count_phrase = (
+                f"{violation_n:,} violation(s)" if violation_n
+                else f"{n} offending row(s)"
             )
-            expected = "Compared groups/keys should match (or meet the check threshold)."
+            table_str = ", ".join(tables[:3]) or "target table(s)"
+            desc_label = f" ({desc})" if desc and len(desc) > 3 else ""
+
+            explanation = (
+                f"DQ check '{label}'{desc_label} fails on {table_str} — "
+                f"live re-execution found {count_phrase}. "
+                f"Key finding: {top}."
+            )
             if desc and len(desc) > 20:
                 expected = desc[:240]
-            actual = top or summary
+            else:
+                expected = "Compared groups/keys should match (or meet the check threshold)."
+            actual = f"{count_phrase} — {top}" if violation_n else (top or summary)
             business = (
-                f"A data quality check failed with {n} concrete exception(s). "
-                f"Key finding: {top}."
+                f"DQ check '{label}'{desc_label} flagged {count_phrase} "
+                f"in {table_str}. Key finding: {top}."
             )
 
         entities = [{"name": t, "type": "table"} for t in tables[:5]]
@@ -1472,7 +1505,11 @@ class RCAAgent(BaseAgent):
         idx = {p["id"]: p for p in pipelines}
         target = idx.get(pipeline_id)
         if not target:
-            return {"error": f"pipeline {pipeline_id} not found"}
+            return {"error": f"pipeline {pipeline_id} not found",
+                    "error_code": "PIPELINE_NOT_FOUND",
+                    "pipeline_id": pipeline_id,
+                    "date_from": date_from,
+                    "date_to": date_to}
 
         target = self._enrich_for_rca(lineage, target)
         idx[pipeline_id] = target
@@ -1902,23 +1939,46 @@ class RCAAgent(BaseAgent):
         # RCA only needs one check row. Do NOT revalidate the whole failure set here —
         # read_results(revalidate=True) re-runs up to 8 DQ SQLs and was ~74s of /api/rca.
         # Live verdict for THIS check is done once below via execute_dq_rule.
-        from app.connectors.dq_connector import get_cached_summary
+        from app.connectors.dq_connector import find_dq_check, get_cached_summary
         cached = get_cached_summary(df, dt)
-        if cached and (cached.get("all_checks") or cached.get("checks")):
+        used_cache = bool(cached and (cached.get("all_checks") or cached.get("checks")))
+        if used_cache:
             all_checks = list(cached.get("all_checks") or cached.get("checks") or [])
             # #region agent log
             _dbg_mark("read_results_ms")
             _dbg_marks["read_results_source"] = "summary_cache"
             # #endregion
         else:
-            all_checks = DQConnector().read_results(df, dt, revalidate=False)
+            # Same shape as Dashboard summary: one row per QC+subject. A raw
+            # LIMIT 500 without latest_only can omit QCs drowned by newer runs.
+            all_checks = DQConnector().read_results(df, dt, revalidate=False, latest_only=True)
             # #region agent log
             _dbg_mark("read_results_ms")
-            _dbg_marks["read_results_source"] = "snowflake_no_revalidate"
+            _dbg_marks["read_results_source"] = "snowflake_latest_only"
             # #endregion
-        check = next((c for c in all_checks if c["id"] == check_id), None)
+        check = find_dq_check(all_checks, check_id)
+        if not check and used_cache:
+            all_checks = DQConnector().read_results(df, dt, revalidate=False, latest_only=True)
+            check = find_dq_check(all_checks, check_id)
+            # #region agent log
+            _dbg_mark("read_results_retry_ms")
+            _dbg_marks["read_results_source"] = "snowflake_retry_after_cache_miss"
+            # #endregion
         if not check:
-            return {"error": f"DQ check {check_id} not found"}
+            # Point lookup by QC_ID — bypasses the 500-row scan window entirely.
+            check = DQConnector().fetch_check_by_id(check_id, df, dt)
+            # #region agent log
+            _dbg_mark("fetch_check_by_id_ms")
+            _dbg_marks["read_results_source"] = "snowflake_fetch_by_id"
+            # #endregion
+        if not check:
+            return {
+                "error": f"DQ check {check_id} not found",
+                "error_code": "DQ_CHECK_NOT_FOUND",
+                "pipeline_id": check_id,
+                "date_from": df,
+                "date_to": dt,
+            }
 
         check = {**check, "tables": lineage.resolve_dq_tables(check)}
         journey.append({"step": "Failure detected", "status": "done",
