@@ -5,13 +5,13 @@ import { KpiSkeleton, LoadingOverlay, TableSkeleton } from './LoadingIndicator'
 
 const DQ_KPI_DEFS = [
   ['total', 'Total'],
-  ['success', 'Passed'], ['failed', 'Failed'], ['warning', 'Warning'],
+  ['success', 'Success'], ['failed', 'Failed'], ['warning', 'Warning'],
   ['skipped', 'Skipped'], ['running', 'Running'],
 ]
 
 const TASK_KPI_DEFS = [
   ['total', 'Total'],
-  ['success', 'Successful'], ['failed', 'Failed'], ['delayed', 'Delayed'],
+  ['success', 'Success'], ['failed', 'Failed'], ['delayed', 'Delayed'],
   ['skipped', 'Skipped'], ['running', 'Running'], ['scheduled', 'Scheduled'],
 ]
 
@@ -44,7 +44,7 @@ const STATUS_ALIASES = {
 }
 
 const STATUS_PRIORITY = {
-  FAILED: 0, WARNING: 1, DELAYED: 1, RUNNING: 2, SCHEDULED: 2.5, SKIPPED: 3, SUCCESS: 4,
+  SUCCESS: 0, FAILED: 1, DELAYED: 2, SKIPPED: 3, RUNNING: 4, SCHEDULED: 5, WARNING: 6,
 }
 
 function getStatusPriority(s) {
@@ -53,6 +53,17 @@ function getStatusPriority(s) {
     if (aliases.includes(upper)) return STATUS_PRIORITY[group] ?? 5
   }
   return 5
+}
+
+function formatDuration(seconds) {
+  if (seconds == null) return '—'
+  const s = Math.round(seconds)
+  if (s < 60) return `${s}s`
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  const sec = s % 60
+  if (h > 0) return `${h}h ${m}m ${sec}s`
+  return `${m}m ${sec}s`
 }
 
 function sortRows(rows, sortCol, sortDir) {
@@ -184,8 +195,18 @@ function KpiBar({ kpis, defs, status = 'ALL', onStatusChange }) {
 
 function TasksView({ data, status, onStatusChange, nameFilter, loading, configured, onRunRCA, onSelect }) {
   const allPipelines = data?.all_pipelines || data?.pipelines || []
-  const [sortCol, setSortCol] = useState('status')
-  const [sortDir, setSortDir] = useState('asc')
+  const [sortCol, setSortCol] = useState('started_at')
+  const [sortDir, setSortDir] = useState('desc')
+
+  useEffect(() => {
+    if (status === 'ALL') {
+      setSortCol('status')
+      setSortDir('asc')
+    } else {
+      setSortCol('started_at')
+      setSortDir('desc')
+    }
+  }, [status])
 
   const handleSort = useCallback((col) => {
     setSortCol((prev) => {
@@ -234,24 +255,27 @@ function TasksView({ data, status, onStatusChange, nameFilter, loading, configur
           </tr>
         </thead>
         <tbody>
-          {rows.map((p) => (
-            <tr key={p.id} onClick={() => onSelect?.(p)}>
+          {rows.map((p) => {
+            const canInvestigate = p.status === 'FAILED' || p.status === 'DELAYED' || p.status === 'WARNING'
+            return (
+            <tr key={p.id} className={canInvestigate ? 'clickable' : ''} onClick={() => canInvestigate && onSelect?.(p)}>
               <td>{p.name}</td>
               <td><span className="pill">{p.platform}</span></td>
               <td><span className={`badge ${p.status}`}>{p.status}</span></td>
               <td className="muted" style={{ whiteSpace: 'nowrap' }}>{p.started_at ? formatRunAt(p.started_at) : '—'}</td>
               <td className="muted" style={{ whiteSpace: 'nowrap' }}>{p.ended_at ? formatRunAt(p.ended_at) : '—'}</td>
-              <td>{p.duration_s != null ? `${p.duration_s}s` : '—'}</td>
+              <td>{formatDuration(p.duration_s)}</td>
               <td className="muted" style={{ maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {p.error || '—'}
               </td>
               <td>
-                {(p.status === 'FAILED' || p.status === 'DELAYED') && (
+                {canInvestigate && (
                   <button className="btn" onClick={(e) => { e.stopPropagation(); onRunRCA?.(p) }}>Run RCA</button>
                 )}
               </td>
             </tr>
-          ))}
+            )
+          })}
           {rows.length === 0 && !loading && (
             <tr>
               <td colSpan={8} className="muted">

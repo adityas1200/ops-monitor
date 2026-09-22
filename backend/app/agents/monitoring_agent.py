@@ -45,7 +45,7 @@ class MonitoringAgent(BaseAgent):
             self._connector_errors.append({"platform": "snowflake", "error": sf.last_error})
         if aws.last_error:
             self._connector_errors.append({"platform": "aws", "error": aws.last_error})
-        # de-dup by id, then keep latest run per task identity (name+platform+db+schema)
+        # de-dup by id (each run has a unique id including the schedule timestamp)
         seen, merged = set(), []
         for r in records:
             if r["id"] in seen:
@@ -54,7 +54,6 @@ class MonitoringAgent(BaseAgent):
                 continue
             seen.add(r["id"])
             merged.append(self._flag_delay(r))
-        merged = self._latest_per_task(merged)
         _COLLECT_CACHE.update({"key": cache_key, "ts": now, "records": merged, "filled": True})
         return merged
 

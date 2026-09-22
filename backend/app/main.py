@@ -243,10 +243,16 @@ def rca(req: RCARequest):
     from pathlib import Path as _P
     _dbg_t0 = _dbg_time.perf_counter()
     # #endregion
-    result = orchestrator.run_rca(
-        req.pipeline_id, req.extra_context, date_from=req.date_from, date_to=req.date_to,
-        include_lineage=req.include_lineage,
-    )
+    try:
+        result = orchestrator.run_rca(
+            req.pipeline_id, req.extra_context, date_from=req.date_from, date_to=req.date_to,
+            include_lineage=req.include_lineage,
+        )
+    except Exception as e:
+        err_str = str(e)
+        if "402" in err_str or "budget" in err_str.lower() or "exceeded" in err_str.lower() or "quota" in err_str.lower():
+            raise HTTPException(status_code=402, detail=err_str)
+        raise
     # #region agent log
     try:
         _p = _P(__file__).resolve().parents[2] / "debug-938378.log"
@@ -342,7 +348,13 @@ def remediate(pipeline_id: str):
 def chat(req: ChatRequest):
     sid = req.session_id or "default"
     history = session_store.get_history(sid)
-    result = orchestrator.chat_message(req.message, req.pipeline_id, req.context, history)
+    try:
+        result = orchestrator.chat_message(req.message, req.pipeline_id, req.context, history)
+    except Exception as e:
+        err_str = str(e)
+        if "402" in err_str or "budget" in err_str.lower() or "exceeded" in err_str.lower():
+            raise HTTPException(status_code=402, detail=err_str)
+        raise
     session_store.add_message(sid, "user", req.message)
     session_store.add_message(sid, "assistant", result["reply"])
     return result

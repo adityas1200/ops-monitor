@@ -415,7 +415,8 @@ table { width: 100%; border-collapse: collapse; background: var(--panel); border
 .lineage-tables h4 { margin: 0 0 8px; font-size: 13px; }
 th, td { text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--border); font-size: 13px; }
 th { color: var(--muted); font-weight: 600; background: var(--panel2); }
-tr:hover td { background: var(--panel2); }
+tr.clickable { cursor: pointer; }
+tr.clickable:hover td { background: var(--panel2); }
 
 /* ---- Badges -------------------------------------------------------- */
 .badge { padding: 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 600; }

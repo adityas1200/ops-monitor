@@ -481,6 +481,7 @@ export default function Workbench({
   const [rca, setRca] = useState(null)
   const [fix, setFix] = useState(null)
   const [busy, setBusy] = useState('')
+  const [rcaError, setRcaError] = useState(null)
   const [hasActioned, setHasActioned] = useState(!!activePipeline)
   const [showKnowledgeForm, setShowKnowledgeForm] = useState(false)
 

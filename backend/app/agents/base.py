@@ -72,6 +72,11 @@ class ClaudeHarness:
         return "401" in str(e) or "authentication" in str(e).lower() or "x-api-key" in str(e).lower()
 
     @staticmethod
+    def _is_budget_error(e: Exception) -> bool:
+        s = str(e).lower()
+        return "402" in str(e) or "budget" in s or "exceeded" in s or "quota" in s
+
+    @staticmethod
     def _system_param(system: str) -> Any:
         """System prompt; when caching is on, mark the block for Anthropic prompt cache."""
         if not LLM_CACHE_CONTROL:
@@ -114,6 +119,9 @@ class ClaudeHarness:
             self._last_error = None
             return self._text_from(msg)
         except Exception as e:  # noqa: BLE001
+            if self._is_budget_error(e):
+                self._last_error = str(e)
+                raise
             if self._is_auth_error(e):
                 logger.warning("ClaudeHarness.reason() auth error, refreshing key...")
                 self._refresh_and_retry()
@@ -123,6 +131,9 @@ class ClaudeHarness:
                         self._last_error = None
                         return self._text_from(msg)
                     except Exception as e2:  # noqa: BLE001
+                        if self._is_budget_error(e2):
+                            self._last_error = str(e2)
+                            raise
                         self._last_error = str(e2)
                         logger.error("ClaudeHarness.reason() retry failed: %s", e2)
                         return None
@@ -141,6 +152,9 @@ class ClaudeHarness:
             self._last_error = None
             return self._text_from(msg)
         except Exception as e:  # noqa: BLE001
+            if self._is_budget_error(e):
+                self._last_error = str(e)
+                raise
             if self._is_auth_error(e):
                 logger.warning("ClaudeHarness.speak() auth error, refreshing key...")
                 self._refresh_and_retry()
@@ -150,6 +164,9 @@ class ClaudeHarness:
                         self._last_error = None
                         return self._text_from(msg)
                     except Exception as e2:  # noqa: BLE001
+                        if self._is_budget_error(e2):
+                            self._last_error = str(e2)
+                            raise
                         self._last_error = str(e2)
                         logger.error("ClaudeHarness.speak() retry failed: %s", e2)
                         return None

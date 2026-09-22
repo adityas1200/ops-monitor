@@ -1,1213 +1,5 @@
 [
   {
-    "timestamp": "2026-09-17T10:12:37.855224+00:00",
-    "source": "dq_connector:execute_dq_sql",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "WITH L2 AS ( \nSELECT PROD_BRAND_NM, COUNT(DISTINCT SEG_GRP_1_RPT_VAL) AS GRP1_RPT_VAL, COUNT(DISTINCT SEG_GRP_1_ID) AS GRP1_ID, COUNT(DISTINCT SEG_GRP_2_RPT_VAL) AS GRP2_RPT_VAL, COUNT(DISTINCT SEG_GRP_2_ID) AS GRP2_ID FROM MODEL_v2.DIM_TARGETS_HCP WHERE UPPER(PROD_BRAND_NM) = 'KERENDIA' and  end_dt",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T10:20:10.479182+00:00",
-    "source": "dq_connector:read_results",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T10:20:12.605691+00:00",
-    "source": "monitoring:telemetry",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE,\n                    CASE\n                        WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                        WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                        WHEN UPPER(STATE) IN ('RUNNING', 'EXECUTING') THEN 'RUNNING'\n                        WHEN UPPER(STATE) = 'SCHEDULED'            THEN 'SCHEDULED'\n                        ELSE 'OTHER'\n                    ",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T10:21:16.713644+00:00",
-    "source": "dq_connector:execute_dq_sql",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "WITH L2 AS ( \nSELECT PROD_BRAND_NM, COUNT(DISTINCT SEG_GRP_1_RPT_VAL) AS GRP1_RPT_VAL, COUNT(DISTINCT SEG_GRP_1_ID) AS GRP1_ID, COUNT(DISTINCT SEG_GRP_2_RPT_VAL) AS GRP2_RPT_VAL, COUNT(DISTINCT SEG_GRP_2_ID) AS GRP2_ID FROM MODEL_v2.DIM_TARGETS_HCP WHERE UPPER(PROD_BRAND_NM) = 'KERENDIA' and  end_dt",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T10:31:12.597357+00:00",
-    "source": "dq_connector:read_results",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T10:31:14.719870+00:00",
-    "source": "monitoring:telemetry",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE,\n                    CASE\n                        WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                        WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                        WHEN UPPER(STATE) IN ('RUNNING', 'EXECUTING') THEN 'RUNNING'\n                        WHEN UPPER(STATE) = 'SCHEDULED'            THEN 'SCHEDULED'\n                        ELSE 'OTHER'\n                    ",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T10:32:19.665787+00:00",
-    "source": "dq_connector:execute_dq_sql",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "WITH L2 AS ( \nSELECT PROD_BRAND_NM, COUNT(DISTINCT SEG_GRP_1_RPT_VAL) AS GRP1_RPT_VAL, COUNT(DISTINCT SEG_GRP_1_ID) AS GRP1_ID, COUNT(DISTINCT SEG_GRP_2_RPT_VAL) AS GRP2_RPT_VAL, COUNT(DISTINCT SEG_GRP_2_ID) AS GRP2_ID FROM MODEL_v2.DIM_TARGETS_HCP WHERE UPPER(PROD_BRAND_NM) = 'KERENDIA' and  end_dt",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T10:33:55.466089+00:00",
-    "source": "monitoring:telemetry",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE,\n                    CASE\n                        WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                        WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                        WHEN UPPER(STATE) IN ('RUNNING', 'EXECUTING') THEN 'RUNNING'\n                        WHEN UPPER(STATE) = 'SCHEDULED'            THEN 'SCHEDULED'\n                        ELSE 'OTHER'\n                    ",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T10:34:04.614719+00:00",
-    "source": "dq_connector:read_results",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T10:34:10.830810+00:00",
-    "source": "dq_connector:read_results",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T10:35:08.111824+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T10:35:10.987823+00:00",
-    "source": "dq_connector:execute_dq_sql",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "WITH L2 AS ( \nSELECT PROD_BRAND_NM, COUNT(DISTINCT SEG_GRP_1_RPT_VAL) AS GRP1_RPT_VAL, COUNT(DISTINCT SEG_GRP_1_ID) AS GRP1_ID, COUNT(DISTINCT SEG_GRP_2_RPT_VAL) AS GRP2_RPT_VAL, COUNT(DISTINCT SEG_GRP_2_ID) AS GRP2_ID FROM MODEL_v2.DIM_TARGETS_HCP WHERE UPPER(PROD_BRAND_NM) = 'KERENDIA' and  end_dt",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T10:38:42.214629+00:00",
-    "source": "dq_connector:read_results",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T10:38:45.513578+00:00",
-    "source": "monitoring:telemetry",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE,\n                    CASE\n                        WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                        WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                        WHEN UPPER(STATE) IN ('RUNNING', 'EXECUTING') THEN 'RUNNING'\n                        WHEN UPPER(STATE) = 'SCHEDULED'            THEN 'SCHEDULED'\n                        ELSE 'OTHER'\n                    ",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T10:39:42.608529+00:00",
-    "source": "dq_connector:execute_dq_sql",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "WITH L2 AS ( \nSELECT PROD_BRAND_NM, COUNT(DISTINCT SEG_GRP_1_RPT_VAL) AS GRP1_RPT_VAL, COUNT(DISTINCT SEG_GRP_1_ID) AS GRP1_ID, COUNT(DISTINCT SEG_GRP_2_RPT_VAL) AS GRP2_RPT_VAL, COUNT(DISTINCT SEG_GRP_2_ID) AS GRP2_ID FROM MODEL_v2.DIM_TARGETS_HCP WHERE UPPER(PROD_BRAND_NM) = 'KERENDIA' and  end_dt",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T10:44:29.872681+00:00",
-    "source": "dq_connector:read_results",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T10:44:32.859129+00:00",
-    "source": "monitoring:telemetry",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE,\n                    CASE\n                        WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                        WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                        WHEN UPPER(STATE) IN ('RUNNING', 'EXECUTING') THEN 'RUNNING'\n                        WHEN UPPER(STATE) = 'SCHEDULED'            THEN 'SCHEDULED'\n                        ELSE 'OTHER'\n                    ",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T10:46:01.822644+00:00",
-    "source": "monitoring:telemetry",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE,\n                    CASE\n                        WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                        WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                        WHEN UPPER(STATE) IN ('RUNNING', 'EXECUTING') THEN 'RUNNING'\n                        WHEN UPPER(STATE) = 'SCHEDULED'            THEN 'SCHEDULED'\n                        ELSE 'OTHER'\n                    ",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T10:46:08.571315+00:00",
-    "source": "dq_connector:read_results",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T10:46:15.660532+00:00",
-    "source": "dq_connector:read_results",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T10:47:19.673086+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T10:47:20.998407+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T10:47:22.246566+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T10:47:23.070478+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T10:47:24.124480+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T10:47:25.354211+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T10:47:28.162045+00:00",
-    "source": "dq_connector:execute_dq_sql",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "with cte AS ( SELECT c.sale_org_nm, c.sale_org_id, c.NBRx_TOTAL AS curr_nbrx, p.NBRx_TOTAL AS prev_nbrx, CASE WHEN p.NBRx_TOTAL = 0 THEN NULL ELSE (c.NBRx_TOTAL - p.NBRx_TOTAL) / p.NBRx_TOTAL * 100 END AS diff_nbrx FROM ( SELECT 'STAR-ALIGN' AS Workstream, UPPER(BASE.SALE_ORG_ID) AS SALE_ORG_ID, sal",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T10:56:10.333177+00:00",
-    "source": "monitoring:telemetry",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE,\n                    CASE\n                        WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                        WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                        WHEN UPPER(STATE) IN ('RUNNING', 'EXECUTING') THEN 'RUNNING'\n                        WHEN UPPER(STATE) = 'SCHEDULED'            THEN 'SCHEDULED'\n                        ELSE 'OTHER'\n                    ",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T10:56:16.084812+00:00",
-    "source": "dq_connector:read_results",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T10:56:22.538337+00:00",
-    "source": "dq_connector:read_results",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T10:57:24.659565+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T10:57:27.653725+00:00",
-    "source": "dq_connector:execute_dq_sql",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "WITH L2 AS ( \nSELECT PROD_BRAND_NM, COUNT(DISTINCT SEG_GRP_1_RPT_VAL) AS GRP1_RPT_VAL, COUNT(DISTINCT SEG_GRP_1_ID) AS GRP1_ID, COUNT(DISTINCT SEG_GRP_2_RPT_VAL) AS GRP2_RPT_VAL, COUNT(DISTINCT SEG_GRP_2_ID) AS GRP2_ID FROM MODEL_v2.DIM_TARGETS_HCP WHERE UPPER(PROD_BRAND_NM) = 'KERENDIA' and  end_dt",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T11:00:24.403477+00:00",
-    "source": "dq_connector:read_results",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T11:00:26.579212+00:00",
-    "source": "monitoring:telemetry",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE,\n                    CASE\n                        WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                        WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                        WHEN UPPER(STATE) IN ('RUNNING', 'EXECUTING') THEN 'RUNNING'\n                        WHEN UPPER(STATE) = 'SCHEDULED'            THEN 'SCHEDULED'\n                        ELSE 'OTHER'\n                    ",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T11:01:50.934921+00:00",
-    "source": "dq_connector:execute_dq_sql",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "WITH L2 AS ( \nSELECT PROD_BRAND_NM, COUNT(DISTINCT SEG_GRP_1_RPT_VAL) AS GRP1_RPT_VAL, COUNT(DISTINCT SEG_GRP_1_ID) AS GRP1_ID, COUNT(DISTINCT SEG_GRP_2_RPT_VAL) AS GRP2_RPT_VAL, COUNT(DISTINCT SEG_GRP_2_ID) AS GRP2_ID FROM MODEL_v2.DIM_TARGETS_HCP WHERE UPPER(PROD_BRAND_NM) = 'KERENDIA' and  end_dt",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T11:19:07.772390+00:00",
-    "source": "dq_connector:read_results",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T11:19:09.748844+00:00",
-    "source": "monitoring:telemetry",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE,\n                    CASE\n                        WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                        WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                        WHEN UPPER(STATE) IN ('RUNNING', 'EXECUTING') THEN 'RUNNING'\n                        WHEN UPPER(STATE) = 'SCHEDULED'            THEN 'SCHEDULED'\n                        ELSE 'OTHER'\n                    ",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T11:20:12.554325+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T11:20:15.466801+00:00",
-    "source": "dq_connector:execute_dq_sql",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "with cte as (select claim_id,ptnt_id,SOURCE_TYP,count(*) from CPH_DB_PROD.ANALYTICS_V2.ANLT_BASE_FACT_CLM_BRAND_MKT WHERE SYS_DATA_SOURCE like '%LAAD%' and prod_brand_cd = '50419-540' group by 1,2,3 having count(*) >1 ) SELECT COUNT(*) AS result_count, CASE WHEN COUNT(*) > 0 THEN 'Results returned' ",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T11:23:06.777843+00:00",
-    "source": "dq_connector:execute_dq_sql",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "with cte as (select claim_id,ptnt_id,SOURCE_TYP,count(*) from CPH_DB_PROD.ANALYTICS_V2.ANLT_BASE_FACT_CLM_BRAND_MKT WHERE SYS_DATA_SOURCE like '%LAAD%' and prod_brand_cd = '50419-540' group by 1,2,3 having count(*) >1 )\nSELECT * FROM cte\nLIMIT 100",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T11:31:01.864275+00:00",
-    "source": "dq_connector:read_results",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T11:31:01.939186+00:00",
-    "source": "monitoring:telemetry",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE,\n                    CASE\n                        WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                        WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                        WHEN UPPER(STATE) IN ('RUNNING', 'EXECUTING') THEN 'RUNNING'\n                        WHEN UPPER(STATE) = 'SCHEDULED'            THEN 'SCHEDULED'\n                        ELSE 'OTHER'\n                    ",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T11:31:55.731945+00:00",
-    "source": "dq_connector:read_results",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T11:32:15.478361+00:00",
-    "source": "dq_connector:read_results",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T11:32:17.319763+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T11:32:20.743711+00:00",
-    "source": "dq_connector:execute_dq_sql",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "with cte as (SELECT c.sale_org_nm, c.sale_org_id, c.NBRx_TOTAL AS curr_nbrx, p.NBRx_TOTAL AS prev_nbrx, CASE WHEN p.NBRx_TOTAL = 0 THEN NULL ELSE (c.NBRx_TOTAL - p.NBRx_TOTAL) / p.NBRx_TOTAL * 100 END AS diff_nbrx FROM ( SELECT 'STAR-ALIGN' AS Workstream, UPPER(BASE.SALE_ORG_ID) AS SALE_ORG_ID, sale",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T11:34:14.351474+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T11:34:16.795482+00:00",
-    "source": "dq_connector:execute_dq_sql",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "with cte as (select coalesce(a.product_name,b.product_name) as product_name, a.nbrx AS L2, b.nbrx AS L3_SALES_UNALIGNED, round(a.nbrx,2) - round(b.nbrx,2) AS DEVIATION from ( SELECT PROD_GRP as product_name,sum(PROJD_NBRX) as nbrx FROM CPH_DB_PROD.MODEL_V2.FACT_IQV_LAAD_SUB_NATIONAL WHERE PROJD_NBRX",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T11:34:18.670194+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T11:34:20.832236+00:00",
-    "source": "dq_connector:execute_dq_sql",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "with cte AS ( SELECT c.sale_org_nm, c.sale_org_id, c.NBRx_TOTAL AS curr_nbrx, p.NBRx_TOTAL AS prev_nbrx, CASE WHEN p.NBRx_TOTAL = 0 THEN NULL ELSE (c.NBRx_TOTAL - p.NBRx_TOTAL) / p.NBRx_TOTAL * 100 END AS diff_nbrx FROM ( SELECT 'STAR-ALIGN' AS Workstream, UPPER(BASE.SALE_ORG_ID) AS SALE_ORG_ID, sal",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T11:34:32.685461+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T11:34:34.996440+00:00",
-    "source": "dq_connector:execute_dq_sql",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "WITH L3_TARGET_CUST AS ( \nSELECT FLD_FORCE_NM, COUNT(DISTINCT CUST_HCP_ID) AS L3_TGT_CNT FROM ANALYTICS_V2.ANLT_BASE_FACT_CUST_CALL_ACTY_ALIGNED \nWHERE PROD_BRAND_NM IN ('KERENDIA') AND FLD_FORCE_NM IN ('CR1','CR2','CR4','CR5') AND SEG_GRP_1_RPT_VAL IS NOT NULL \nAND SEG_GRP_1_RPT_VAL <> 'NPP' GROUP ",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T11:34:39.149665+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T11:34:42.397909+00:00",
-    "source": "dq_connector:execute_dq_sql",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "WITH L3_TARGET_CUST AS ( \nSELECT SEG_GRP_1_RPT_VAL, COUNT(DISTINCT CUST_HCP_ID) AS L3_TGT_CNT FROM ANALYTICS_V2.ANLT_BASE_FACT_CUST_CALL_ACTY \nWHERE PROD_BRAND_NM IN ('KERENDIA')  and SEG_GRP_1_RPT_VAL<>'NPP' \nGROUP BY ALL ),\nL2_TARGET_CUST AS ( SELECT DISTINCT SEG_GRP_1_RPT_VAL, COUNT(DISTINCT BAYE",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T11:34:45.446623+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T11:34:47.791786+00:00",
-    "source": "dq_connector:execute_dq_sql",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "WITH L3_TARGET_CUST AS ( SELECT COUNT(DISTINCT SEG_GRP_1_RPT_VAL) AS L3_TGT_CNT FROM ANALYTICS_V2.ANLT_BASE_FACT_SALES_UNALIGNED AT(OFFSET => -60*60*24*0) WHERE PROD_BRAND_NM IN ('KERENDIA') GROUP BY ALL ), \nL2_TARGET_CUST AS ( SELECT COUNT(DISTINCT SEG_GRP_1_RPT_VAL) AS L2_TGT_CNT FROM MODEL_V2.DIM",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T11:34:52.181174+00:00",
-    "source": "dq_connector:execute_dq_sql",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "with cte as (select claim_id,ptnt_id,SOURCE_TYP,count(*) from CPH_DB_PROD.ANALYTICS_V2.ANLT_BASE_FACT_CLM_BRAND_MKT WHERE SYS_DATA_SOURCE like '%LAAD%' and prod_brand_cd = '50419-540' group by 1,2,3 having count(*) >1 ) SELECT COUNT(*) AS result_count, CASE WHEN COUNT(*) > 0 THEN 'Results returned' ",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T11:34:56.168045+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T11:34:59.144161+00:00",
-    "source": "dq_connector:execute_dq_sql",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "WITH L2 AS ( \nSELECT PROD_BRAND_NM, COUNT(DISTINCT SEG_GRP_1_RPT_VAL) AS GRP1_RPT_VAL, COUNT(DISTINCT SEG_GRP_1_ID) AS GRP1_ID, COUNT(DISTINCT SEG_GRP_2_RPT_VAL) AS GRP2_RPT_VAL, COUNT(DISTINCT SEG_GRP_2_ID) AS GRP2_ID FROM MODEL_v2.DIM_TARGETS_HCP WHERE UPPER(PROD_BRAND_NM) = 'KERENDIA' and  end_dt",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T11:36:11.930215+00:00",
-    "source": "monitoring:telemetry",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE,\n                    CASE\n                        WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                        WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                        WHEN UPPER(STATE) IN ('RUNNING', 'EXECUTING') THEN 'RUNNING'\n                        WHEN UPPER(STATE) = 'SCHEDULED'            THEN 'SCHEDULED'\n                        ELSE 'OTHER'\n                    ",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T12:31:12.223499+00:00",
-    "source": "dq_connector:read_results",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T12:31:12.223499+00:00",
-    "source": "monitoring:telemetry",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE,\n                    CASE\n                        WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                        WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                        WHEN UPPER(STATE) IN ('RUNNING', 'EXECUTING') THEN 'RUNNING'\n                        WHEN UPPER(STATE) = 'SCHEDULED'            THEN 'SCHEDULED'\n                        ELSE 'OTHER'\n                    ",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T12:31:23.283109+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T12:31:25.336388+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T12:31:27.757955+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T12:31:28.830173+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T12:31:29.993437+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T12:31:34.290003+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T12:31:35.305542+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T12:31:36.307430+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T12:31:36.956426+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T12:31:37.854715+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T12:31:40.359334+00:00",
-    "source": "dq_connector:read_results",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T12:31:41.288445+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T12:31:42.076416+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T12:31:44.288825+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T12:31:45.078659+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T12:31:46.155872+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T12:31:49.090520+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T12:31:50.934502+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T12:31:51.668526+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T12:31:52.267608+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T12:31:53.385739+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T12:31:57.394936+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T12:31:57.912480+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T12:31:58.604066+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T12:32:00.260935+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T12:32:02.239905+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T12:32:06.821756+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T12:32:10.730055+00:00",
-    "source": "dq_connector:execute_dq_sql",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "WITH actual_data AS (\n    SELECT DISTINCT \n        prod_brand_cd,\n        UPPER(prod_brand_nm) AS prod_brand_nm\n    FROM ANALYTICS_V2.ANLT_BASE_FACT_CUST_CALL_ACTY\n    WHERE sys_data_source = 'VAULT_CRM_AC2'\n      AND UPPER(prod_brand_nm) IN \n          ('KERENDIA','NUBEQA','XOFIGO','ADEMPAS','KYLEEN",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T12:32:11.961843+00:00",
-    "source": "dq_connector:read_results",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T12:32:15.823669+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T12:32:18.211995+00:00",
-    "source": "dq_connector:execute_dq_sql",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "WITH cte1 AS (\n    SELECT \n        'L2' AS layer,\n        DE.evnt_id,\n        COUNT(DISTINCT \n            CASE \n                WHEN (UPPER(DE.EVNT_STAT) LIKE 'COMPLETED%' OR UPPER(DE.EVNT_STAT) LIKE 'CLOSED%') \n                     AND UPPER(FEA.STAT) LIKE 'ATTENDED%' \n                    THEN FEA.",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T12:32:23.406661+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T12:32:23.904720+00:00",
-    "source": "dq_connector:read_results",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T12:32:25.654055+00:00",
-    "source": "dq_connector:execute_dq_sql",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "WITH\ncte_table_list AS (\n    SELECT 'EVENTS' AS AREA, 'FACT_EVENT_SPEAKER' AS TABLE_NAME, 'DAILY' AS REFRESH UNION ALL\n    SELECT 'EVENTS', 'FACT_EVENT_ATTENDEE', 'DAILY' UNION ALL\n    SELECT 'EVENTS', 'FACT_EXPENSE_ESTIMATE', 'DAILY' UNION ALL\n    SELECT 'EVENTS', 'FACT_EXPENSE_LINE', 'DAILY' UNION",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T13:34:37.660844+00:00",
-    "source": "dq_connector:read_results",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T13:34:40.675677+00:00",
-    "source": "monitoring:telemetry",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE,\n                    CASE\n                        WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                        WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                        WHEN UPPER(STATE) IN ('RUNNING', 'EXECUTING') THEN 'RUNNING'\n                        WHEN UPPER(STATE) = 'SCHEDULED'            THEN 'SCHEDULED'\n                        ELSE 'OTHER'\n                    ",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T13:34:52.434339+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T13:34:53.124494+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T13:34:53.809224+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T13:34:54.416310+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-17T13:34:55.109150+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-18T06:13:24.523751+00:00",
-    "source": "monitoring:telemetry",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE,\n                    CASE\n                        WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                        WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                        WHEN UPPER(STATE) IN ('RUNNING', 'EXECUTING') THEN 'RUNNING'\n                        WHEN UPPER(STATE) = 'SCHEDULED'            THEN 'SCHEDULED'\n                        ELSE 'OTHER'\n                    ",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-18T06:13:40.538491+00:00",
-    "source": "dq_connector:read_results",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-18T06:13:59.152358+00:00",
-    "source": "dq_connector:read_results",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-18T06:14:20.791580+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-18T06:56:06.103177+00:00",
-    "source": "monitoring:telemetry",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE,\n                    CASE\n                        WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                        WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                        WHEN UPPER(STATE) IN ('RUNNING', 'EXECUTING') THEN 'RUNNING'\n                        WHEN UPPER(STATE) = 'SCHEDULED'            THEN 'SCHEDULED'\n                        ELSE 'OTHER'\n                    ",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-18T07:01:06.822516+00:00",
-    "source": "dq_connector:read_results",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-18T07:01:11.979523+00:00",
-    "source": "monitoring:telemetry",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE,\n                    CASE\n                        WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                        WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                        WHEN UPPER(STATE) IN ('RUNNING', 'EXECUTING') THEN 'RUNNING'\n                        WHEN UPPER(STATE) = 'SCHEDULED'            THEN 'SCHEDULED'\n                        ELSE 'OTHER'\n                    ",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-18T07:02:00.620520+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-18T07:10:00.116447+00:00",
-    "source": "monitoring:telemetry",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE,\n                    CASE\n                        WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                        WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                        WHEN UPPER(STATE) IN ('RUNNING', 'EXECUTING') THEN 'RUNNING'\n                        WHEN UPPER(STATE) = 'SCHEDULED'            THEN 'SCHEDULED'\n                        ELSE 'OTHER'\n                    ",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-18T07:22:41.226128+00:00",
-    "source": "dq_connector:read_results",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-18T07:25:35.511102+00:00",
-    "source": "dq_connector:read_results",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-18T07:25:35.642406+00:00",
-    "source": "monitoring:telemetry",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE,\n                    CASE\n                        WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                        WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                        WHEN UPPER(STATE) IN ('RUNNING', 'EXECUTING') THEN 'RUNNING'\n                        WHEN UPPER(STATE) = 'SCHEDULED'            THEN 'SCHEDULED'\n                        ELSE 'OTHER'\n                    ",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-18T07:26:09.224545+00:00",
-    "source": "dq_connector:read_results",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-18T07:27:17.664893+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-18T07:27:25.362534+00:00",
-    "source": "dq_connector:execute_dq_sql",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "WITH cte AS (\n    SELECT COUNT(*) AS violation_count\n    FROM enrich_v2.MN_RBTPMT_SALE_CLOSED\n    WHERE REBATE_PAYMENT_AMT > 0 AND INV_QTY < 0\n)\nSELECT\n    'MN_RBPMT_SALE_CLOSED' AS TABLE_NAME,\n    'Constraint: REBATE_PAYMENT_AMT > 0 AND INV_QTY < 0' AS METRIC,\n    '0' AS EXPECTED_RESULT,\n    CAST(C",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-18T07:28:38.736928+00:00",
-    "source": "dq_connector:execute_dq_sql",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "WITH cte AS (\n    SELECT COUNT(*) AS violation_count\n    FROM enrich_v2.MN_RBTPMT_SALE_CLOSED\n    WHERE REBATE_PAYMENT_AMT > 0 AND INV_QTY < 0\n)\nSELECT * FROM cte\nLIMIT 100",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-18T07:35:38.422497+00:00",
-    "source": "dq_connector:read_results",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-18T07:35:41.000536+00:00",
-    "source": "monitoring:telemetry",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE,\n                    CASE\n                        WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                        WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                        WHEN UPPER(STATE) IN ('RUNNING', 'EXECUTING') THEN 'RUNNING'\n                        WHEN UPPER(STATE) = 'SCHEDULED'            THEN 'SCHEDULED'\n                        ELSE 'OTHER'\n                    ",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-18T07:36:24.235979+00:00",
-    "source": "dq_connector:execute_dq_sql",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "WITH cte AS (\n    SELECT COUNT(*) AS violation_count\n    FROM enrich_v2.MN_RBTPMT_SALE_CLOSED\n    WHERE REBATE_PAYMENT_AMT > 0 AND INV_QTY < 0\n)\nSELECT\n    'MN_RBPMT_SALE_CLOSED' AS TABLE_NAME,\n    'Constraint: REBATE_PAYMENT_AMT > 0 AND INV_QTY < 0' AS METRIC,\n    '0' AS EXPECTED_RESULT,\n    CAST(C",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-18T07:38:50.374731+00:00",
-    "source": "dq_connector:execute_dq_sql",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "WITH cte AS (\n    SELECT COUNT(*) AS violation_count\n    FROM enrich_v2.MN_RBTPMT_SALE_CLOSED\n    WHERE REBATE_PAYMENT_AMT > 0 AND INV_QTY < 0\n)\nSELECT * FROM cte\nLIMIT 100",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-18T07:44:58.977270+00:00",
-    "source": "dq_connector:read_results",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-18T07:45:01.736567+00:00",
-    "source": "monitoring:telemetry",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE,\n                    CASE\n                        WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                        WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                        WHEN UPPER(STATE) IN ('RUNNING', 'EXECUTING') THEN 'RUNNING'\n                        WHEN UPPER(STATE) = 'SCHEDULED'            THEN 'SCHEDULED'\n                        ELSE 'OTHER'\n                    ",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-18T07:45:05.932363+00:00",
-    "source": "dq_connector:read_results",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-18T07:45:08.805997+00:00",
-    "source": "monitoring:telemetry",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE,\n                    CASE\n                        WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                        WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                        WHEN UPPER(STATE) IN ('RUNNING', 'EXECUTING') THEN 'RUNNING'\n                        WHEN UPPER(STATE) = 'SCHEDULED'            THEN 'SCHEDULED'\n                        ELSE 'OTHER'\n                    ",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-18T07:45:33.363778+00:00",
-    "source": "dq_connector:execute_dq_sql",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "WITH cte AS (\n    SELECT COUNT(*) AS violation_count\n    FROM enrich_v2.MN_RBTPMT_SALE_CLOSED\n    WHERE REBATE_PAYMENT_AMT > 0 AND INV_QTY < 0\n)\nSELECT\n    'MN_RBPMT_SALE_CLOSED' AS TABLE_NAME,\n    'Constraint: REBATE_PAYMENT_AMT > 0 AND INV_QTY < 0' AS METRIC,\n    '0' AS EXPECTED_RESULT,\n    CAST(C",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-18T07:45:37.934976+00:00",
-    "source": "dq_connector:read_results",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-18T07:45:40.123875+00:00",
-    "source": "dq_connector:execute_dq_sql",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "WITH cte AS (\n    SELECT COUNT(*) AS violation_count\n    FROM enrich_v2.MN_RBTPMT_SALE_CLOSED\n    WHERE REBATE_PAYMENT_AMT > 0 AND INV_QTY < 0\n)\nSELECT\n    'MN_RBPMT_SALE_CLOSED' AS TABLE_NAME,\n    'Constraint: REBATE_PAYMENT_AMT > 0 AND INV_QTY < 0' AS METRIC,\n    '0' AS EXPECTED_RESULT,\n    CAST(C",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-18T07:46:01.647643+00:00",
-    "source": "dq_connector:execute_dq_sql",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "WITH cte AS (\n    SELECT COUNT(*) AS violation_count\n    FROM enrich_v2.MN_RBTPMT_SALE_CLOSED\n    WHERE REBATE_PAYMENT_AMT > 0 AND INV_QTY < 0\n)\nSELECT * FROM cte\nLIMIT 100",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-18T07:46:17.447666+00:00",
-    "source": "dq_connector:execute_dq_sql",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "WITH cte AS (\n    SELECT COUNT(*) AS violation_count\n    FROM enrich_v2.MN_RBTPMT_SALE_CLOSED\n    WHERE REBATE_PAYMENT_AMT > 0 AND INV_QTY < 0\n)\nSELECT\n    'MN_RBPMT_SALE_CLOSED' AS TABLE_NAME,\n    'Constraint: REBATE_PAYMENT_AMT > 0 AND INV_QTY < 0' AS METRIC,\n    '0' AS EXPECTED_RESULT,\n    CAST(C",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-18T07:46:17.749522+00:00",
-    "source": "dq_connector:execute_dq_sql",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "WITH cte AS (\n    SELECT COUNT(*) AS violation_count\n    FROM enrich_v2.MN_RBTPMT_SALE_CLOSED\n    WHERE REBATE_PAYMENT_AMT > 0 AND INV_QTY < 0\n)\nSELECT * FROM cte\nLIMIT 100",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-18T07:46:46.740404+00:00",
-    "source": "dq_connector:execute_dq_sql",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "WITH cte AS (\n    SELECT COUNT(*) AS violation_count\n    FROM enrich_v2.MN_RBTPMT_SALE_CLOSED\n    WHERE REBATE_PAYMENT_AMT > 0 AND INV_QTY < 0\n)\nSELECT * FROM cte\nLIMIT 100",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-18T07:46:49.384683+00:00",
-    "source": "monitoring:telemetry",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE,\n                    CASE\n                        WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                        WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                        WHEN UPPER(STATE) IN ('RUNNING', 'EXECUTING') THEN 'RUNNING'\n                        WHEN UPPER(STATE) = 'SCHEDULED'            THEN 'SCHEDULED'\n                        ELSE 'OTHER'\n                    ",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-18T07:47:49.405790+00:00",
-    "source": "monitoring:telemetry",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE,\n                    CASE\n                        WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                        WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                        WHEN UPPER(STATE) IN ('RUNNING', 'EXECUTING') THEN 'RUNNING'\n                        WHEN UPPER(STATE) = 'SCHEDULED'            THEN 'SCHEDULED'\n                        ELSE 'OTHER'\n                    ",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-18T07:47:49.406795+00:00",
-    "source": "dq_connector:read_results",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-18T07:47:49.406795+00:00",
-    "source": "monitoring:telemetry",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE,\n                    CASE\n                        WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                        WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                        WHEN UPPER(STATE) IN ('RUNNING', 'EXECUTING') THEN 'RUNNING'\n                        WHEN UPPER(STATE) = 'SCHEDULED'            THEN 'SCHEDULED'\n                        ELSE 'OTHER'\n                    ",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-18T07:47:53.930966+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-18T07:47:55.408177+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-18T07:47:57.182486+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-18T07:47:58.588823+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-18T07:47:59.961618+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-18T07:48:03.031437+00:00",
-    "source": "dq_connector:execute_dq_sql",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "WITH cte AS (\n    SELECT COUNT(*) AS total_duplicate_records\n    FROM (\n        SELECT\n            CLM_REQT_NBR,\n            DOC_ITEM,\n            SYS_DATA_SOURCE\n        FROM MODEL_V2.FACT_SUB_NTNL_INDRCT_NON_RTL_SLS\n        GROUP BY\n            CLM_REQT_NBR,\n            DOC_ITEM,\n            SYS_D",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-18T07:48:04.042383+00:00",
-    "source": "dq_connector:read_results",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-18T07:48:06.606302+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-18T07:48:07.603624+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-18T07:48:08.688569+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-18T07:48:09.746410+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-18T07:48:11.085037+00:00",
-    "source": "dq_connector:locate_rule_table",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "DQ rule-table search across 6 config table(s)",
-    "result": null
-  },
-  {
-    "timestamp": "2026-09-18T07:48:13.041555+00:00",
-    "source": "dq_connector:execute_dq_sql",
-    "classification": "READ",
-    "allowed": true,
-    "sql": "WITH cte AS (\r\n SELECT COUNT(*) AS invalid_count FROM MODEL_V2.FACT_SUB_NTNL_INDRCT_NON_RTL_SLS\r\n WHERE UPPER(SYS_DATA_SOURCE)='MODEL_N' AND PRIC_DT < '2024-07-06'\r\n)\r\nSELECT 'FACT_SUB_NTNL_INDRCT_NON_RTL_SLS' AS TABLE_NAME,'MODEL_N PRE CUTOVER' AS METRIC,'0' AS EXPECTED_DATE,\r\nCAST(invalid_count AS",
-    "result": null
-  },
-  {
     "timestamp": "2026-09-18T07:48:15.566213+00:00",
     "source": "dq_connector:locate_rule_table",
     "classification": "READ",
@@ -3997,6 +2789,1214 @@
     "classification": "READ",
     "allowed": true,
     "sql": "\n                SELECT\n                    NAME AS TASK_NAME,\n                    DATABASE_NAME,\n                    SCHEMA_NAME,\n                    STATE,\n                    CASE\n                            WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                            WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                            WHEN UPPER(STATE) IN ('SKIPPED', 'SKIP')   THEN 'SKIP'\n                            WHEN UPPER(STATE) IN ('CANCELLED', 'CAN",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-21T10:58:13.841409+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE,\n                    CASE\n                            WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                            WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                            WHEN UPPER(STATE) IN ('SKIPPED', 'SKIP')   THEN 'SKIP'\n                            WHEN UPPER(STATE) IN ('CANCELLED', 'CANCELED') THEN 'SKIP'\n                            WHEN UPPER(STATE) IN",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-21T10:58:13.865992+00:00",
+    "source": "monitoring:scheduled",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    NAME AS TASK_NAME,\n                    DATABASE_NAME,\n                    SCHEMA_NAME,\n                    STATE,\n                    CASE\n                            WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                            WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                            WHEN UPPER(STATE) IN ('SKIPPED', 'SKIP')   THEN 'SKIP'\n                            WHEN UPPER(STATE) IN ('CANCELLED', 'CAN",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-21T10:58:23.434634+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-21T10:58:50.633636+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-21T10:59:21.405899+00:00",
+    "source": "dq_connector:locate_rule_table",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "DQ rule-table search across 6 config table(s)",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-21T10:59:24.366615+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH cte AS (\r\n    SELECT COALESCE(COUNT(*), 0) AS total_duplicate_records\r\n    FROM (\r\n        SELECT MBR_NM\r\n        FROM MODEL_V2.DIM_MN_CUST\r\n        GROUP BY MBR_NM\r\n        HAVING COUNT(*) > 1\r\n    )\r\n)\r\nSELECT\r\n    'DIM_MN_CUST' AS TABLE_NAME,\r\n    COALESCE(total_duplicate_records, 0) AS TOTA",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-21T11:03:36.739125+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH cte AS (\r\n    SELECT COALESCE(COUNT(*), 0) AS total_duplicate_records\r\n    FROM (\r\n        SELECT MBR_NM\r\n        FROM MODEL_V2.DIM_MN_CUST\r\n        GROUP BY MBR_NM\r\n        HAVING COUNT(*) > 1\r\n    )\r\n)\nSELECT * FROM cte\nLIMIT 100",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-21T12:10:50.298731+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE,\n                    CASE\n                            WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                            WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                            WHEN UPPER(STATE) IN ('SKIPPED', 'SKIP')   THEN 'SKIP'\n                            WHEN UPPER(STATE) IN ('CANCELLED', 'CANCELED') THEN 'SKIP'\n                            WHEN UPPER(STATE) IN",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-21T12:10:50.428856+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-21T12:10:50.435889+00:00",
+    "source": "monitoring:scheduled",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    NAME AS TASK_NAME,\n                    DATABASE_NAME,\n                    SCHEMA_NAME,\n                    STATE,\n                    CASE\n                            WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                            WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                            WHEN UPPER(STATE) IN ('SKIPPED', 'SKIP')   THEN 'SKIP'\n                            WHEN UPPER(STATE) IN ('CANCELLED', 'CAN",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-21T12:11:09.543545+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-21T12:11:42.053448+00:00",
+    "source": "dq_connector:locate_rule_table",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "DQ rule-table search across 6 config table(s)",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-21T12:11:45.258920+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH cte AS (\r\n    SELECT COUNT(*) AS violation_count\r\n    FROM MODEL_V2.FACT_MN_MCO_UTIL_PUB\r\n    WHERE UOM IS NULL\r\n)\r\nSELECT\r\n    'FACT_MN_MCO_UTIL_PUB' AS TABLE_NAME,\r\n    'Constraint: UOM IS NULL' AS METRIC,\r\n    CASE\r\n        WHEN violation_count = 0 THEN 'Pass'\r\n        ELSE 'Fail'\r\n    END A",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-21T12:12:22.700091+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH cte AS (\r\n    SELECT COUNT(*) AS violation_count\r\n    FROM MODEL_V2.FACT_MN_MCO_UTIL_PUB\r\n    WHERE UOM IS NULL\r\n)\nSELECT * FROM cte\nLIMIT 100",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-21T12:14:05.330036+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-21T12:14:09.309502+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE,\n                    CASE\n                            WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                            WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                            WHEN UPPER(STATE) IN ('SKIPPED', 'SKIP')   THEN 'SKIP'\n                            WHEN UPPER(STATE) IN ('CANCELLED', 'CANCELED') THEN 'SKIP'\n                            WHEN UPPER(STATE) IN",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-21T12:14:09.323977+00:00",
+    "source": "monitoring:scheduled",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    NAME AS TASK_NAME,\n                    DATABASE_NAME,\n                    SCHEMA_NAME,\n                    STATE,\n                    CASE\n                            WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                            WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                            WHEN UPPER(STATE) IN ('SKIPPED', 'SKIP')   THEN 'SKIP'\n                            WHEN UPPER(STATE) IN ('CANCELLED', 'CAN",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-21T12:14:39.179942+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH cte AS (\r\n    SELECT COUNT(*) AS violation_count\r\n    FROM MODEL_V2.FACT_MN_MCO_UTIL_PUB\r\n    WHERE UOM IS NULL\r\n)\r\nSELECT\r\n    'FACT_MN_MCO_UTIL_PUB' AS TABLE_NAME,\r\n    'Constraint: UOM IS NULL' AS METRIC,\r\n    CASE\r\n        WHEN violation_count = 0 THEN 'Pass'\r\n        ELSE 'Fail'\r\n    END A",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-21T12:15:15.009490+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH cte AS (\r\n    SELECT COUNT(*) AS violation_count\r\n    FROM MODEL_V2.FACT_MN_MCO_UTIL_PUB\r\n    WHERE UOM IS NULL\r\n)\nSELECT * FROM cte\nLIMIT 100",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-21T12:28:26.528232+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-21T12:28:30.518685+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE,\n                    CASE\n                            WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                            WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                            WHEN UPPER(STATE) IN ('SKIPPED', 'SKIP')   THEN 'SKIP'\n                            WHEN UPPER(STATE) IN ('CANCELLED', 'CANCELED') THEN 'SKIP'\n                            WHEN UPPER(STATE) IN",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-21T12:28:30.532711+00:00",
+    "source": "monitoring:scheduled",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    NAME AS TASK_NAME,\n                    DATABASE_NAME,\n                    SCHEMA_NAME,\n                    STATE,\n                    CASE\n                            WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                            WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                            WHEN UPPER(STATE) IN ('SKIPPED', 'SKIP')   THEN 'SKIP'\n                            WHEN UPPER(STATE) IN ('CANCELLED', 'CAN",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-21T12:29:06.877763+00:00",
+    "source": "dq_connector:locate_rule_table",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "DQ rule-table search across 6 config table(s)",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-21T12:29:09.644400+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH cte AS (\r\n    SELECT COUNT(*) AS violation_count\r\n    FROM MODEL_V2.DIM_MN_ADDR\r\n    WHERE LINE1 IS NULL AND LINE2 IS NULL AND LINE3 IS NULL AND LINE4 IS NULL\r\n)\r\nSELECT\r\n    'DIM_MN_ADDR' AS TABLE_NAME,\r\n    'Constraint: LINE1 IS NULL AND LINE2 IS NULL AND LINE3 IS NULL AND LINE4 IS NULL' AS M",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-21T12:29:54.720739+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH cte AS (\r\n    SELECT COUNT(*) AS violation_count\r\n    FROM MODEL_V2.DIM_MN_ADDR\r\n    WHERE LINE1 IS NULL AND LINE2 IS NULL AND LINE3 IS NULL AND LINE4 IS NULL\r\n)\nSELECT * FROM cte\nLIMIT 100",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-21T12:46:36.986123+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-21T12:46:43.201572+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE,\n                    CASE\n                            WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                            WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                            WHEN UPPER(STATE) IN ('SKIPPED', 'SKIP')   THEN 'SKIP'\n                            WHEN UPPER(STATE) IN ('CANCELLED', 'CANCELED') THEN 'SKIP'\n                            WHEN UPPER(STATE) IN",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-21T12:46:43.275482+00:00",
+    "source": "monitoring:scheduled",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    NAME AS TASK_NAME,\n                    DATABASE_NAME,\n                    SCHEMA_NAME,\n                    STATE,\n                    CASE\n                            WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                            WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                            WHEN UPPER(STATE) IN ('SKIPPED', 'SKIP')   THEN 'SKIP'\n                            WHEN UPPER(STATE) IN ('CANCELLED', 'CAN",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-21T12:46:57.677383+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH counts AS (\n\n    SELECT \n        'L3' AS src,\n        COUNT(DISTINCT CUST_HCP_ID) AS cnt\n    FROM ANALYTICS_V2.ANLT_BASE_FACT_CLM_DX \n    WHERE SYS_DATA_SOURCE = 'IQV_LAAD_EZN'\n      AND DATE_ID > (\n            SELECT REPLACE(\n                       DATEADD(YEAR, -2, CAST(MAX(DATE_ID) AS DATE))",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:26:03.159802+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE,\n                    CASE\n                            WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                            WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                            WHEN UPPER(STATE) IN ('SKIPPED', 'SKIP')   THEN 'SKIP'\n                            WHEN UPPER(STATE) IN ('CANCELLED', 'CANCELED') THEN 'SKIP'\n                            WHEN UPPER(STATE) IN",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:26:03.176305+00:00",
+    "source": "monitoring:scheduled",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    NAME AS TASK_NAME,\n                    DATABASE_NAME,\n                    SCHEMA_NAME,\n                    STATE,\n                    CASE\n                            WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                            WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                            WHEN UPPER(STATE) IN ('SKIPPED', 'SKIP')   THEN 'SKIP'\n                            WHEN UPPER(STATE) IN ('CANCELLED', 'CAN",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:26:03.159802+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:26:03.717817+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE,\n                    CASE\n                            WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                            WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                            WHEN UPPER(STATE) IN ('SKIPPED', 'SKIP')   THEN 'SKIP'\n                            WHEN UPPER(STATE) IN ('CANCELLED', 'CANCELED') THEN 'SKIP'\n                            WHEN UPPER(STATE) IN",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:26:03.759322+00:00",
+    "source": "monitoring:scheduled",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    NAME AS TASK_NAME,\n                    DATABASE_NAME,\n                    SCHEMA_NAME,\n                    STATE,\n                    CASE\n                            WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                            WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                            WHEN UPPER(STATE) IN ('SKIPPED', 'SKIP')   THEN 'SKIP'\n                            WHEN UPPER(STATE) IN ('CANCELLED', 'CAN",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:26:12.545884+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:26:19.057886+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:26:48.633567+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:27:06.580934+00:00",
+    "source": "dq_connector:locate_rule_table",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "DQ rule-table search across 6 config table(s)",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:27:08.305591+00:00",
+    "source": "dq_connector:locate_rule_table",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "DQ rule-table search across 6 config table(s)",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:27:11.534015+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH year_filter AS (\n    SELECT TO_CHAR(CURRENT_DATE, 'YYYY') AS CURR_YEAR\n),\n\nL2 AS (\n    SELECT\n        CASE\n            WHEN UPPER(VW.PROD_ID) IN ('KOGENATE','KOGENATE FS')\n                THEN 'KOGENATE'\n            ELSE UPPER(VW.PROD_ID)\n        END AS PROD_NM,\n\n        SUM(VW.REDISTRIBUTED_UN",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:28:23.519970+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE,\n                    CASE\n                            WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                            WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                            WHEN UPPER(STATE) IN ('SKIPPED', 'SKIP')   THEN 'SKIP'\n                            WHEN UPPER(STATE) IN ('CANCELLED', 'CANCELED') THEN 'SKIP'\n                            WHEN UPPER(STATE) IN",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:28:23.556921+00:00",
+    "source": "monitoring:scheduled",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    NAME AS TASK_NAME,\n                    DATABASE_NAME,\n                    SCHEMA_NAME,\n                    STATE,\n                    CASE\n                            WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                            WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                            WHEN UPPER(STATE) IN ('SKIPPED', 'SKIP')   THEN 'SKIP'\n                            WHEN UPPER(STATE) IN ('CANCELLED', 'CAN",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:28:32.068896+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:29:35.919463+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:29:42.974364+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH year_filter AS (\n    SELECT TO_CHAR(CURRENT_DATE, 'YYYY') AS CURR_YEAR\n),\n\nL2 AS (\n    SELECT\n        CASE\n            WHEN UPPER(VW.PROD_ID) IN ('KOGENATE','KOGENATE FS')\n                THEN 'KOGENATE'\n            ELSE UPPER(VW.PROD_ID)\n        END AS PROD_NM,\n\n        SUM(VW.REDISTRIBUTED_UN",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:32:46.860497+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE,\n                    CASE\n                            WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                            WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                            WHEN UPPER(STATE) IN ('SKIPPED', 'SKIP')   THEN 'SKIP'\n                            WHEN UPPER(STATE) IN ('CANCELLED', 'CANCELED') THEN 'SKIP'\n                            WHEN UPPER(STATE) IN",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:32:46.882073+00:00",
+    "source": "monitoring:scheduled",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    NAME AS TASK_NAME,\n                    DATABASE_NAME,\n                    SCHEMA_NAME,\n                    STATE,\n                    CASE\n                            WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                            WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                            WHEN UPPER(STATE) IN ('SKIPPED', 'SKIP')   THEN 'SKIP'\n                            WHEN UPPER(STATE) IN ('CANCELLED', 'CAN",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:32:57.135201+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:33:10.454425+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:35:17.252212+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE,\n                    CASE\n                            WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                            WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                            WHEN UPPER(STATE) IN ('SKIPPED', 'SKIP')   THEN 'SKIP'\n                            WHEN UPPER(STATE) IN ('CANCELLED', 'CANCELED') THEN 'SKIP'\n                            WHEN UPPER(STATE) IN",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:35:17.270239+00:00",
+    "source": "monitoring:scheduled",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    NAME AS TASK_NAME,\n                    DATABASE_NAME,\n                    SCHEMA_NAME,\n                    STATE,\n                    CASE\n                            WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                            WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                            WHEN UPPER(STATE) IN ('SKIPPED', 'SKIP')   THEN 'SKIP'\n                            WHEN UPPER(STATE) IN ('CANCELLED', 'CAN",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:35:27.355178+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:36:50.700270+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:36:53.437267+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE,\n                    CASE\n                            WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                            WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                            WHEN UPPER(STATE) IN ('SKIPPED', 'SKIP')   THEN 'SKIP'\n                            WHEN UPPER(STATE) IN ('CANCELLED', 'CANCELED') THEN 'SKIP'\n                            WHEN UPPER(STATE) IN",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:36:53.437267+00:00",
+    "source": "monitoring:scheduled",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    NAME AS TASK_NAME,\n                    DATABASE_NAME,\n                    SCHEMA_NAME,\n                    STATE,\n                    CASE\n                            WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                            WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                            WHEN UPPER(STATE) IN ('SKIPPED', 'SKIP')   THEN 'SKIP'\n                            WHEN UPPER(STATE) IN ('CANCELLED', 'CAN",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:37:00.043434+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH invalid_rows AS ( SELECT COUNT(*) AS invalid_count FROM ANALYTICS_V2.ANLT_BASE_FACT_CLM_RX WHERE SYS_DATA_SOURCE = 'IQV_LAAD_EZN' AND (PAID_NK_VMS_FLG = '1' OR SUBMITTED_NK_VMS_FLG = '1') AND COALESCE(NK_MKT_FLAG, '0') != '1' ) SELECT 'ANLT_BASE_FACT_CLM_RX' AS TABLE_NAME, 'NK VMS vs NK_MKT_FLA",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:41:28.866750+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE,\n                    CASE\n                            WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                            WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                            WHEN UPPER(STATE) IN ('SKIPPED', 'SKIP')   THEN 'SKIP'\n                            WHEN UPPER(STATE) IN ('CANCELLED', 'CANCELED') THEN 'SKIP'\n                            WHEN UPPER(STATE) IN",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:41:28.877275+00:00",
+    "source": "monitoring:scheduled",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    NAME AS TASK_NAME,\n                    DATABASE_NAME,\n                    SCHEMA_NAME,\n                    STATE,\n                    CASE\n                            WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                            WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                            WHEN UPPER(STATE) IN ('SKIPPED', 'SKIP')   THEN 'SKIP'\n                            WHEN UPPER(STATE) IN ('CANCELLED', 'CAN",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:41:28.943486+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:42:35.196287+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:42:40.197211+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH base_cte AS (\nWITH EZN_COMPTR_TRX_TOTAL_Nation_level_validation AS\n  (SELECT 'YTD Level EZN_COMPTR_TRX_TOTAL (L3-ME-REP)' AS validation_type,\n          'Nation' AS geo_level,\n          COALESCE(a.sale_org_lvl_3_id, d.sale_org_lvl_3_id, e.nation_id) AS geo,\n          NVL(SUM(a.EZN_COMPTR_TRX_TOT",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:44:20.098347+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:44:22.781448+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE,\n                    CASE\n                            WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                            WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                            WHEN UPPER(STATE) IN ('SKIPPED', 'SKIP')   THEN 'SKIP'\n                            WHEN UPPER(STATE) IN ('CANCELLED', 'CANCELED') THEN 'SKIP'\n                            WHEN UPPER(STATE) IN",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:44:22.781448+00:00",
+    "source": "monitoring:scheduled",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    NAME AS TASK_NAME,\n                    DATABASE_NAME,\n                    SCHEMA_NAME,\n                    STATE,\n                    CASE\n                            WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                            WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                            WHEN UPPER(STATE) IN ('SKIPPED', 'SKIP')   THEN 'SKIP'\n                            WHEN UPPER(STATE) IN ('CANCELLED', 'CAN",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:45:25.370052+00:00",
+    "source": "dq_connector:locate_rule_table",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "DQ rule-table search across 6 config table(s)",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:45:28.842372+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "SELECT\n CASE \n WHEN tgt_cnt = src_cnt THEN 'Pass'\n ELSE 'Fail'\n END AS RESULT\nFROM (\n SELECT\n (SELECT COUNT(*) FROM MODEL_V2.DIM_ACCOUNT_HIERARCHY_STATIC) AS tgt_cnt,\n (SELECT COUNT(*) FROM PHCDW.PHCDW_STG.MDM_STG_ACCT_HRCHY_STATIC) AS src_cnt\n) a",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:49:53.594795+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE,\n                    CASE\n                            WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                            WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                            WHEN UPPER(STATE) IN ('SKIPPED', 'SKIP')   THEN 'SKIP'\n                            WHEN UPPER(STATE) IN ('CANCELLED', 'CANCELED') THEN 'SKIP'\n                            WHEN UPPER(STATE) IN",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:49:53.679972+00:00",
+    "source": "monitoring:scheduled",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    NAME AS TASK_NAME,\n                    DATABASE_NAME,\n                    SCHEMA_NAME,\n                    STATE,\n                    CASE\n                            WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                            WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                            WHEN UPPER(STATE) IN ('SKIPPED', 'SKIP')   THEN 'SKIP'\n                            WHEN UPPER(STATE) IN ('CANCELLED', 'CAN",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:50:03.394404+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:50:31.360534+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:50:34.396089+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:51:00.482336+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH base_cte AS (\nWITH EZN_COMPTR_TRX_TOTAL_Nation_level_validation AS\n  (SELECT 'YTD Level EZN_COMPTR_TRX_TOTAL (L3-ME-REP)' AS validation_type,\n          'Nation' AS geo_level,\n          COALESCE(a.sale_org_lvl_3_id, d.sale_org_lvl_3_id, e.nation_id) AS geo,\n          NVL(SUM(a.EZN_COMPTR_TRX_TOT",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:51:00.786489+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH invalid_rows AS ( SELECT COUNT(*) AS invalid_count FROM ANALYTICS_V2.ANLT_BASE_FACT_CLM_RX WHERE SYS_DATA_SOURCE = 'IQV_LAAD_EZN' AND (PAID_NK_VMS_FLG = '1' OR SUBMITTED_NK_VMS_FLG = '1') AND COALESCE(NK_MKT_FLAG, '0') != '1' ) SELECT 'ANLT_BASE_FACT_CLM_RX' AS TABLE_NAME, 'NK VMS vs NK_MKT_FLA",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:53:31.284090+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE,\n                    CASE\n                            WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                            WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                            WHEN UPPER(STATE) IN ('SKIPPED', 'SKIP')   THEN 'SKIP'\n                            WHEN UPPER(STATE) IN ('CANCELLED', 'CANCELED') THEN 'SKIP'\n                            WHEN UPPER(STATE) IN",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:53:31.350414+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:53:31.365935+00:00",
+    "source": "monitoring:scheduled",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    NAME AS TASK_NAME,\n                    DATABASE_NAME,\n                    SCHEMA_NAME,\n                    STATE,\n                    CASE\n                            WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                            WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                            WHEN UPPER(STATE) IN ('SKIPPED', 'SKIP')   THEN 'SKIP'\n                            WHEN UPPER(STATE) IN ('CANCELLED', 'CAN",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:53:41.855752+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:53:46.520680+00:00",
+    "source": "dq_connector:locate_rule_table",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "DQ rule-table search across 6 config table(s)",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:53:47.392588+00:00",
+    "source": "dq_connector:locate_rule_table",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "DQ rule-table search across 6 config table(s)",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:53:48.695392+00:00",
+    "source": "dq_connector:locate_rule_table",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "DQ rule-table search across 6 config table(s)",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:53:49.905084+00:00",
+    "source": "dq_connector:locate_rule_table",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "DQ rule-table search across 6 config table(s)",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:53:53.206049+00:00",
+    "source": "dq_connector:locate_rule_table",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "DQ rule-table search across 6 config table(s)",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:53:56.966956+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH year_filter AS (\n    SELECT TO_CHAR(CURRENT_DATE, 'YYYY') AS CURR_YEAR\n),\n\nL2 AS (\n    SELECT\n        CASE\n            WHEN UPPER(VW.PROD_ID) IN ('KOGENATE','KOGENATE FS')\n                THEN 'KOGENATE'\n            ELSE UPPER(VW.PROD_ID)\n        END AS PROD_NM,\n\n        SUM(VW.REDISTRIBUTED_UN",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:54:01.818985+00:00",
+    "source": "dq_connector:locate_rule_table",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "DQ rule-table search across 6 config table(s)",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:54:03.261917+00:00",
+    "source": "dq_connector:locate_rule_table",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "DQ rule-table search across 6 config table(s)",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:54:04.437014+00:00",
+    "source": "dq_connector:locate_rule_table",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "DQ rule-table search across 6 config table(s)",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:54:04.912502+00:00",
+    "source": "dq_connector:locate_rule_table",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "DQ rule-table search across 6 config table(s)",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:54:05.601843+00:00",
+    "source": "dq_connector:locate_rule_table",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "DQ rule-table search across 6 config table(s)",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:54:08.186423+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH cte AS (\n    SELECT\n        CASE\n            WHEN UPPER(PROD_BRAND_NM) IN ('KOGENATE','KOGENATE FS')\n                THEN 'KOGENATE FS'\n            ELSE PROD_BRAND_NM\n        END AS BRAND,\n\n        ROUND(SUM(\n            CASE\n                WHEN LEFT(DATE_ID,6) = TO_CHAR(DATEADD(MONTH,-2,CURRE",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:54:11.239368+00:00",
+    "source": "dq_connector:locate_rule_table",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "DQ rule-table search across 6 config table(s)",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:54:11.901687+00:00",
+    "source": "dq_connector:locate_rule_table",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "DQ rule-table search across 6 config table(s)",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:54:12.765035+00:00",
+    "source": "dq_connector:locate_rule_table",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "DQ rule-table search across 6 config table(s)",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:54:13.239453+00:00",
+    "source": "dq_connector:locate_rule_table",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "DQ rule-table search across 6 config table(s)",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:54:13.682859+00:00",
+    "source": "dq_connector:locate_rule_table",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "DQ rule-table search across 6 config table(s)",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:54:15.659922+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH cte AS (\n    SELECT\n        KOGSLS_PROD_ID AS BRAND,\n        ROUND(SUM(KOGSLS_MNTH_1)) AS M1,\n        ROUND(SUM(KOGSLS_MNTH_2)) AS M2,\n        ROUND(SUM(KOGSLS_MNTH_3)) AS M3\n    FROM PHCDW.PHCDW_STG_HEM.STG_PRM_KOG_SLS_ZIP AT(OFFSET => 0)\n    WHERE KOGSLS_PROD_ID IN ('Jivi','Kovaltry','Kogenat",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:54:18.141846+00:00",
+    "source": "dq_connector:locate_rule_table",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "DQ rule-table search across 6 config table(s)",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:54:19.604489+00:00",
+    "source": "dq_connector:locate_rule_table",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "DQ rule-table search across 6 config table(s)",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:54:20.202065+00:00",
+    "source": "dq_connector:locate_rule_table",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "DQ rule-table search across 6 config table(s)",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:54:20.604096+00:00",
+    "source": "dq_connector:locate_rule_table",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "DQ rule-table search across 6 config table(s)",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:54:21.523697+00:00",
+    "source": "dq_connector:locate_rule_table",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "DQ rule-table search across 6 config table(s)",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:54:23.442966+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH CUR AS (\n        SELECT\n            LEFT(DATE_ID, 6)  AS MONTH,\n            PROD_BRAND_NM,\n            SUM(UNIT)          AS UNIT\n        FROM CPH_DB_PROD.ANALYTICS_V2.ANLT_BASE_FACT_SALES_ALIGNED\n        WHERE SALE_CHNL_ID IN ('REDISTRIBUTED')\n          AND (FLD_FRC_ID IN ('14') OR FLD_FRC_ID ",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:54:27.294880+00:00",
+    "source": "dq_connector:locate_rule_table",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "DQ rule-table search across 6 config table(s)",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:54:27.866739+00:00",
+    "source": "dq_connector:locate_rule_table",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "DQ rule-table search across 6 config table(s)",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:54:28.837247+00:00",
+    "source": "dq_connector:locate_rule_table",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "DQ rule-table search across 6 config table(s)",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:54:29.583114+00:00",
+    "source": "dq_connector:locate_rule_table",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "DQ rule-table search across 6 config table(s)",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:54:30.127752+00:00",
+    "source": "dq_connector:locate_rule_table",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "DQ rule-table search across 6 config table(s)",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:54:32.728794+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH FK AS (\n    SELECT DISTINCT\n        COUNTRY_ID,\n        SOURCE_SYS_ID,\n        ACCT_ID,\n        PROD_ID,\n        WHSLR\n    FROM CPH_DB_PROD.MODEL_V2.FACT_KOG_SALES\n    WHERE DATA_DT = (\n        SELECT MAX(DATA_DT)\n        FROM CPH_DB_PROD.MODEL_V2.FACT_KOG_SALES\n    )\n),\n\nVW AS (\n    SELECT\n   ",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:54:38.629628+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH l3 AS (   -- L3 layer: aligned sales fact\n    SELECT\n        sale_org_id,\n        NVL(SUM(nrx), 0) AS l3_ezn_comptr_nrx_total\n    FROM anlt_base_fact_sales_aligned\n    WHERE prod_brand_nm IN (\n        'VEOZAH', 'LYNKUET', 'VENLAFAXINE HCL ER', 'BRINTELLIX', 'FLUOXETINE', 'VILAZODONE HCL',\n     ",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:54:40.677348+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH rep_reach_freq_validation AS ( SELECT 'Latest Week Rep Focused Reach & Frequency (Source vs Performance Grid)' AS validation_type, 'Territory' AS geo_level, COALESCE(a.sale_org_id, p.sale_org_id) AS geo, NVL(COUNT(DISTINCT a.rep_focused_reach_num), 0) AS l3_rep_reach_num, NVL(COUNT(DISTINCT p.r",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:54:42.502076+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH cte_a AS (\n    SELECT  \n        sale_org_id AS geo,\n        SUM(SMPL_QTY) AS galaxy_ai_smpl_dlvr\n    FROM RPTG_GLXAI_FACT_SMPL_LYN\n    WHERE CALL_SMPL_DATE LIKE '2026%'\n      AND prod_brand_nm = 'LYNKUET' \n      AND UPPER(SMPL_DLVR_STAT) IN ('DELIVERED', 'AOC_RECEIVED') \n      AND FLD_FORCE_ID ",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:55:08.950061+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE,\n                    CASE\n                            WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                            WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                            WHEN UPPER(STATE) IN ('SKIPPED', 'SKIP')   THEN 'SKIP'\n                            WHEN UPPER(STATE) IN ('CANCELLED', 'CANCELED') THEN 'SKIP'\n                            WHEN UPPER(STATE) IN",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:55:08.965579+00:00",
+    "source": "monitoring:scheduled",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    NAME AS TASK_NAME,\n                    DATABASE_NAME,\n                    SCHEMA_NAME,\n                    STATE,\n                    CASE\n                            WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                            WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                            WHEN UPPER(STATE) IN ('SKIPPED', 'SKIP')   THEN 'SKIP'\n                            WHEN UPPER(STATE) IN ('CANCELLED', 'CAN",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T06:55:15.090504+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH year_filter AS (\n    SELECT TO_CHAR(CURRENT_DATE, 'YYYY') AS CURR_YEAR\n),\n\nL2 AS (\n    SELECT\n        CASE\n            WHEN UPPER(VW.PROD_ID) IN ('KOGENATE','KOGENATE FS')\n                THEN 'KOGENATE'\n            ELSE UPPER(VW.PROD_ID)\n        END AS PROD_NM,\n\n        SUM(VW.REDISTRIBUTED_UN",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T07:05:57.521021+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE,\n                    CASE\n                            WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                            WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                            WHEN UPPER(STATE) IN ('SKIPPED', 'SKIP')   THEN 'SKIP'\n                            WHEN UPPER(STATE) IN ('CANCELLED', 'CANCELED') THEN 'SKIP'\n                            WHEN UPPER(STATE) IN",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T07:05:57.586123+00:00",
+    "source": "monitoring:scheduled",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    NAME AS TASK_NAME,\n                    DATABASE_NAME,\n                    SCHEMA_NAME,\n                    STATE,\n                    CASE\n                            WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                            WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                            WHEN UPPER(STATE) IN ('SKIPPED', 'SKIP')   THEN 'SKIP'\n                            WHEN UPPER(STATE) IN ('CANCELLED', 'CAN",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T07:06:26.121866+00:00",
+    "source": "dq_connector:locate_rule_table",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "DQ rule-table search across 6 config table(s)",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T07:06:27.578876+00:00",
+    "source": "dq_connector:locate_rule_table",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "DQ rule-table search across 6 config table(s)",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T07:06:29.500737+00:00",
+    "source": "dq_connector:locate_rule_table",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "DQ rule-table search across 6 config table(s)",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T07:06:30.469552+00:00",
+    "source": "dq_connector:locate_rule_table",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "DQ rule-table search across 6 config table(s)",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T07:06:31.720304+00:00",
+    "source": "dq_connector:locate_rule_table",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "DQ rule-table search across 6 config table(s)",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T07:06:36.960170+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "SELECT\n    src AS TABLE_NAME,\n    'AUDIT_NULL_OR_WRONG_BRAND' AS METRIC,\n    src AS SOURCE,\n    src AS TARGET,\n    bad_ct AS SOURCE_CNT,\n    0 AS TARGET_CNT,\n    CASE WHEN bad_ct = 0 THEN 'Pass' ELSE 'Fail' END AS COMMENT\nFROM (\n    SELECT 'CPH_DB_PROD.ENRICH_V2.ONC_HER2M_LAB04' AS src,\n           C",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T07:09:44.439132+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE,\n                    CASE\n                            WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                            WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                            WHEN UPPER(STATE) IN ('SKIPPED', 'SKIP')   THEN 'SKIP'\n                            WHEN UPPER(STATE) IN ('CANCELLED', 'CANCELED') THEN 'SKIP'\n                            WHEN UPPER(STATE) IN",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T07:09:44.525465+00:00",
+    "source": "monitoring:scheduled",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    NAME AS TASK_NAME,\n                    DATABASE_NAME,\n                    SCHEMA_NAME,\n                    STATE,\n                    CASE\n                            WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                            WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                            WHEN UPPER(STATE) IN ('SKIPPED', 'SKIP')   THEN 'SKIP'\n                            WHEN UPPER(STATE) IN ('CANCELLED', 'CAN",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T07:10:49.066940+00:00",
+    "source": "dq_connector:locate_rule_table",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "DQ rule-table search across 6 config table(s)",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T07:10:50.168475+00:00",
+    "source": "dq_connector:locate_rule_table",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "DQ rule-table search across 6 config table(s)",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T07:10:52.314762+00:00",
+    "source": "dq_connector:locate_rule_table",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "DQ rule-table search across 6 config table(s)",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T07:10:56.472038+00:00",
+    "source": "dq_connector:locate_rule_table",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "DQ rule-table search across 6 config table(s)",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T07:10:57.221033+00:00",
+    "source": "dq_connector:locate_rule_table",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "DQ rule-table search across 6 config table(s)",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T07:10:58.392785+00:00",
+    "source": "dq_connector:locate_rule_table",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "DQ rule-table search across 6 config table(s)",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T07:11:03.638318+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH cte AS (\n    SELECT\n        CASE\n            WHEN UPPER(PROD_BRAND_NM) IN ('KOGENATE','KOGENATE FS')\n                THEN 'KOGENATE FS'\n            ELSE PROD_BRAND_NM\n        END AS BRAND,\n\n        ROUND(SUM(\n            CASE\n                WHEN LEFT(DATE_ID,6) = TO_CHAR(DATEADD(MONTH,-2,CURRE",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T07:16:17.357746+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE,\n                    CASE\n                            WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                            WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                            WHEN UPPER(STATE) IN ('SKIPPED', 'SKIP')   THEN 'SKIP'\n                            WHEN UPPER(STATE) IN ('CANCELLED', 'CANCELED') THEN 'SKIP'\n                            WHEN UPPER(STATE) IN",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T07:16:17.533025+00:00",
+    "source": "monitoring:scheduled",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    NAME AS TASK_NAME,\n                    DATABASE_NAME,\n                    SCHEMA_NAME,\n                    STATE,\n                    CASE\n                            WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                            WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                            WHEN UPPER(STATE) IN ('SKIPPED', 'SKIP')   THEN 'SKIP'\n                            WHEN UPPER(STATE) IN ('CANCELLED', 'CAN",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T07:17:15.703358+00:00",
+    "source": "dq_connector:locate_rule_table",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "DQ rule-table search across 6 config table(s)",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T07:17:19.089932+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH curr_snap AS (\n    SELECT 'IC_LARO_NPS_ZIP_BASED'               AS IC_FILE, DATA_DATE, COUNT(*) AS cnt\n    FROM ANALYTICS_V2.IC_LARO_NPS_ZIP_BASED\n    GROUP BY 1, 2\n    UNION ALL\n    SELECT 'IC_LARO_SALES_WEEKLY_ACCOUNT_BASED'  AS IC_FILE, DATA_DATE, COUNT(*) AS cnt\n    FROM ANALYTICS_V2.IC_LAR",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T07:20:41.176437+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE,\n                    CASE\n                            WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                            WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                            WHEN UPPER(STATE) IN ('SKIPPED', 'SKIP')   THEN 'SKIP'\n                            WHEN UPPER(STATE) IN ('CANCELLED', 'CANCELED') THEN 'SKIP'\n                            WHEN UPPER(STATE) IN",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T07:20:41.191468+00:00",
+    "source": "monitoring:scheduled",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    NAME AS TASK_NAME,\n                    DATABASE_NAME,\n                    SCHEMA_NAME,\n                    STATE,\n                    CASE\n                            WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                            WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                            WHEN UPPER(STATE) IN ('SKIPPED', 'SKIP')   THEN 'SKIP'\n                            WHEN UPPER(STATE) IN ('CANCELLED', 'CAN",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T07:22:05.147906+00:00",
+    "source": "dq_connector:locate_rule_table",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "DQ rule-table search across 6 config table(s)",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T07:22:07.869997+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH cte AS (\n    SELECT\n        CASE\n            WHEN UPPER(PROD_BRAND_NM) IN ('KOGENATE','KOGENATE FS')\n                THEN 'KOGENATE FS'\n            ELSE PROD_BRAND_NM\n        END AS BRAND,\n\n        ROUND(SUM(\n            CASE\n                WHEN LEFT(DATE_ID,6) = TO_CHAR(DATEADD(MONTH,-2,CURRE",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T07:22:17.671109+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH cte AS (\n    SELECT\n        CASE\n            WHEN UPPER(PROD_BRAND_NM) IN ('KOGENATE','KOGENATE FS')\n                THEN 'KOGENATE FS'\n            ELSE PROD_BRAND_NM\n        END AS BRAND,\n\n        ROUND(SUM(\n            CASE\n                WHEN LEFT(DATE_ID,6) = TO_CHAR(DATEADD(MONTH,-2,CURRE",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T07:28:35.645454+00:00",
+    "source": "monitoring:telemetry",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    TASK_NAME, DATABASE_NAME, SCHEMA_NAME, STATE,\n                    CASE\n                            WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                            WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                            WHEN UPPER(STATE) IN ('SKIPPED', 'SKIP')   THEN 'SKIP'\n                            WHEN UPPER(STATE) IN ('CANCELLED', 'CANCELED') THEN 'SKIP'\n                            WHEN UPPER(STATE) IN",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T07:28:35.661495+00:00",
+    "source": "monitoring:scheduled",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    NAME AS TASK_NAME,\n                    DATABASE_NAME,\n                    SCHEMA_NAME,\n                    STATE,\n                    CASE\n                            WHEN UPPER(STATE) = 'SUCCEEDED'            THEN 'PASS'\n                            WHEN UPPER(STATE) LIKE '%%FAIL%%'           THEN 'FAIL'\n                            WHEN UPPER(STATE) IN ('SKIPPED', 'SKIP')   THEN 'SKIP'\n                            WHEN UPPER(STATE) IN ('CANCELLED', 'CAN",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T07:28:42.356614+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T07:28:55.158334+00:00",
+    "source": "dq_connector:read_results",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "\n                SELECT\n                    RUN_DATE,\n                    QC_ID,\n                    SUBJECT_AREA,\n                    CHECK_TYPE,\n                    PASS_COUNT,\n                    FAIL_COUNT,\n                    STATUS,\n                    QC_DESCRIPTION\n                FROM CPH_D",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T07:29:22.774136+00:00",
+    "source": "dq_connector:locate_rule_table",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "DQ rule-table search across 6 config table(s)",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T07:29:23.501616+00:00",
+    "source": "dq_connector:locate_rule_table",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "DQ rule-table search across 6 config table(s)",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T07:29:24.133988+00:00",
+    "source": "dq_connector:locate_rule_table",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "DQ rule-table search across 6 config table(s)",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T07:29:24.893629+00:00",
+    "source": "dq_connector:locate_rule_table",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "DQ rule-table search across 6 config table(s)",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T07:29:25.697272+00:00",
+    "source": "dq_connector:locate_rule_table",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "DQ rule-table search across 6 config table(s)",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T07:29:26.396598+00:00",
+    "source": "dq_connector:locate_rule_table",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "DQ rule-table search across 6 config table(s)",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T07:29:28.380115+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH cte AS (\n    SELECT SUM(cnt - 1) AS total_duplicate_records\n    FROM (\n        SELECT COUNT(*) AS cnt\n        FROM CPH_DB_PROD.ENRICH_V2.STG_GTN_MN_PYR_PBM\n        GROUP BY STLMNT_DOC, CTRCT_ID\n        HAVING COUNT(*) > 1\n    )\n)\n\nSELECT\n    'STG_GTN_MN_PYR_PBM' AS TABLE_NAME,\n    COALESCE(tota",
+    "result": null
+  },
+  {
+    "timestamp": "2026-09-22T07:30:57.136015+00:00",
+    "source": "dq_connector:execute_dq_sql",
+    "classification": "READ",
+    "allowed": true,
+    "sql": "WITH cte AS (\n    SELECT SUM(cnt - 1) AS total_duplicate_records\n    FROM (\n        SELECT COUNT(*) AS cnt\n        FROM CPH_DB_PROD.ENRICH_V2.STG_GTN_MN_PYR_PBM\n        GROUP BY STLMNT_DOC, CTRCT_ID\n        HAVING COUNT(*) > 1\n    )\n)\nSELECT * FROM cte\nLIMIT 100",
     "result": null
   }
 ]

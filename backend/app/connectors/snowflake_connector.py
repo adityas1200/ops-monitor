@@ -675,16 +675,11 @@ class SnowflakeConnector:
                             cur.execute(f"USE WAREHOUSE {session_wh}")
                         except Exception:
                             pass
-            # Latest completed/skipped/failed/running run per task (exclude planned).
-            seen_runs = set()
+            # All completed/skipped/failed/running runs per task (exclude planned).
             for row in rows:
                 rec = _record_from_task_row(row)
                 if _is_scheduled_row(row[3], row[4], row[11]):
                     continue
-                task_key = (rec.get("database"), rec.get("schema"), row[0])
-                if task_key in seen_runs:
-                    continue
-                seen_runs.add(task_key)
                 records.append(rec)
             # Next upcoming planned run per task (ORDER BY SCHEDULED_TIME ASC).
             seen_sched = set()
