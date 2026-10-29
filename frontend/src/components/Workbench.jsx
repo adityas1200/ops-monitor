@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../api/client'
 import TableLineageGraph from './TableLineageGraph'
 import RichRootCause from './RichRootCause'
@@ -195,57 +195,81 @@ function EvidenceCards({ structured, fallback }) {
   return null
 }
 
-function ImpactCards({ ia }) {
-  if (!ia) return null
-  const cards = [
-    { label: 'Tables', value: ia.impacted_tables?.length || 0 },
-    { label: 'Pipelines', value: ia.impacted_pipelines?.length || 0 },
-    { label: 'Reports', value: ia.impacted_reports?.length || 0 },
-    { label: 'Downstream Tasks', value: ia.downstream_tasks?.length || 0 },
-    { label: 'Severity', value: ia.business_severity || 'Unknown', isSeverity: true },
-  ]
-  return (
-    <div className="impact-cards">
-      {cards.map((c) => (
-        <div key={c.label} className="impact-card">
-          <div className={`impact-card__value ${c.isSeverity ? 'severity' : ''}`}
-            style={c.isSeverity ? { color: SEVERITY_COLOR[c.value] || 'var(--text)' } : undefined}>
-            {c.value}
-          </div>
-          <div className="impact-card__label">{c.label}</div>
-        </div>
-      ))}
-    </div>
-  )
+function impactItemName(item) {
+  if (typeof item === 'string') return item.trim()
+  return String(item?.fqn || item?.table || item?.name || item?.id || '').trim()
 }
 
-function impactSummaryFromAssessment(ia) {
-  const tables = (ia.impacted_tables || []).slice(0, 3)
-  const pipelines = (ia.impacted_pipelines || []).slice(0, 3)
-  const reports = (ia.impacted_reports || []).slice(0, 3)
-  const nameOf = (item) => typeof item === 'string'
-    ? item.trim()
-    : String(item?.fqn || item?.table || item?.name || item?.id || '').trim()
-  const names = (items) => items.map(nameOf).filter(Boolean)
-  const tableNames = names(tables)
-  const pipelineNames = names(pipelines)
-  const reportNames = names(reports)
-  const countParts = [
-    [ia.impacted_tables?.length || 0, 'Table', 'Tables'],
-    [ia.impacted_pipelines?.length || 0, 'Pipeline', 'Pipelines'],
-    [ia.impacted_reports?.length || 0, 'Report', 'Reports'],
-  ]
-    .filter(([count]) => count > 0)
-    .map(([count, singular, plural]) => `${count} ${count === 1 ? singular : plural}`)
-  const countsOnly = countParts.join(' • ') || 'No downstream impact identified'
-  if (!tableNames.length && !pipelineNames.length && !reportNames.length) return countsOnly
+function ImpactSummaryBox({ ia, rca }) {
+  const tables = (ia?.impacted_tables || [])
+    .map(impactItemName)
+    .filter(Boolean)
+  const pipelines = (ia?.impacted_pipelines || [])
+    .map(impactItemName)
+    .filter(Boolean)
+  // Fallbacks when assessment lists are empty but RCA still has names.
+  const tableList = tables.length
+    ? tables
+    : (rca?.affected_tables || [])
+      .map((t) => (typeof t === 'string' ? t : t?.table))
+      .filter(Boolean)
+  const pipelineList = pipelines.length
+    ? pipelines
+    : [rca?.pipeline_id, rca?.root_cause_name, rca?.incident_summary?.failure_name]
+      .filter(Boolean)
+      .slice(0, 1)
+  const severityRaw = ia?.business_severity || rca?.incident_summary?.business_severity || 'Unknown'
+  const severityKey = String(severityRaw).trim()
+  const severityColor = SEVERITY_COLOR[severityKey]
+    || SEVERITY_COLOR[severityKey.charAt(0).toUpperCase() + severityKey.slice(1).toLowerCase()]
+    || 'var(--accent)'
 
-  const lines = ['Validation results impact:']
-  if (tableNames.length) lines.push(`• Data Table${tableNames.length > 1 ? 's' : ''}: ${tableNames.join(', ')}`)
-  if (pipelineNames.length) lines.push(`• Pipeline${pipelineNames.length > 1 ? 's' : ''}: ${pipelineNames.join(', ')}`)
-  if (reportNames.length) lines.push(`• Reports: ${reportNames.join(', ')}`)
-  lines.push('Total Impact:', countsOnly)
-  return lines.join('\n')
+  return (
+    <div className="impact-summary-box">
+      <div className="impact-summary-box__section">
+        <div className="impact-summary-box__label">Data Tables</div>
+        <div className="impact-summary-box__chips">
+          {tableList.length ? tableList.map((name) => (
+            <span key={name} className="impact-chip impact-chip--table">
+              <span className="impact-chip__icon" aria-hidden="true">⊞</span>
+              <code>{name}</code>
+            </span>
+          )) : (
+            <span className="impact-summary-box__empty">None identified</span>
+          )}
+        </div>
+      </div>
+
+      <div className="impact-summary-box__section">
+        <div className="impact-summary-box__label">Pipelines</div>
+        <div className="impact-summary-box__chips">
+          {pipelineList.length ? pipelineList.map((name) => (
+            <span key={name} className="impact-chip impact-chip--pipeline">
+              <span className="impact-chip__icon" aria-hidden="true">⇄</span>
+              <span>{name}</span>
+            </span>
+          )) : (
+            <span className="impact-summary-box__empty">None identified</span>
+          )}
+        </div>
+      </div>
+
+      <div className="impact-summary-box__divider" aria-hidden="true" />
+
+      <div className="impact-summary-box__section">
+        <div className="impact-summary-box__label">Total Impact</div>
+        <div className="impact-summary-box__severity">
+          <span className="impact-summary-box__severity-label">Severity</span>
+          <span
+            className="impact-severity-pill"
+            style={{ background: severityColor, color: '#fff' }}
+          >
+            {severityKey}
+          </span>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function ConfidenceSection({ confidence, confidenceLevel, drivers }) {
@@ -363,10 +387,7 @@ function RcaReport({
       {/* ═══ SECTION 7: IMPACT SUMMARY ═══════════════════════════════════════ */}
       <div className="rca-section">
         <h4 className="rca-section__title">Impact Summary</h4>
-        <p className="rca-impact-summary">
-          {rca.impact_summary || impactSummaryFromAssessment(ia)}
-        </p>
-        <ImpactCards ia={ia} />
+        <ImpactSummaryBox ia={ia} rca={rca} />
       </div>
 
       {/* ═══ SECTION 8: AI CONFIDENCE EXPLANATION ════════════════════════════ */}
@@ -394,22 +415,60 @@ function RcaReport({
 
       {showKnowledgeForm && knowledgeForm}
 
-      {/* ═══ CODE ANALYSIS (inline, not collapsible) ═════════════════════════ */}
+      {/* ═══ CODE ANALYSIS ═══════════════════════════════════════════════════ */}
       {rca.code_analysis?.llm_explanation && (
-        <div className="rca-section">
-          <h4 className="rca-section__title">Code Analysis</h4>
-          <p style={{ fontSize: 13, margin: 0, whiteSpace: 'pre-line' }}>{rca.code_analysis.llm_explanation}</p>
-          {rca.code_analysis?.task_sql && (
-            <pre style={{
-              fontSize: 11, lineHeight: 1.5, margin: '8px 0 0', whiteSpace: 'pre-wrap',
-              background: 'var(--code-bg)', padding: 10, borderRadius: 6, maxHeight: 220, overflow: 'auto',
-            }}>{rca.code_analysis.task_sql}</pre>
-          )}
-          {!rca.code_analysis?.task_sql && rca.code_analysis?.sql_code && (
-            <pre style={{
-              fontSize: 11, lineHeight: 1.5, margin: '8px 0 0', whiteSpace: 'pre-wrap',
-              background: 'var(--code-bg)', padding: 10, borderRadius: 6, maxHeight: 220, overflow: 'auto',
-            }}>{rca.code_analysis.sql_code}</pre>
+        <CodeAnalysisPanel rca={rca} />
+      )}
+    </div>
+  )
+}
+
+function CodeAnalysisPanel({ rca }) {
+  const [sqlOpen, setSqlOpen] = useState(false)
+  const ca = rca.code_analysis || {}
+  const sqlText = ca.task_sql || ca.sql_code || ''
+  const objects = useMemo(() => {
+    const fromCa = (ca.tables_inspected || []).filter(Boolean)
+    if (fromCa.length) return fromCa
+    return (rca.affected_tables || [])
+      .map((t) => (typeof t === 'string' ? t : t?.table))
+      .filter(Boolean)
+  }, [ca.tables_inspected, rca.affected_tables])
+
+  return (
+    <div className="rca-section code-analysis">
+      <h4 className="code-analysis__title">
+        <span className="code-analysis__title-icon" aria-hidden="true">🔍</span>
+        Code Analysis
+      </h4>
+      <p className="code-analysis__body">{ca.llm_explanation}</p>
+
+      {objects.length > 0 && (
+        <div className="code-analysis__objects">
+          <div className="code-analysis__objects-label">Objects inspected</div>
+          <ul className="code-analysis__object-list">
+            {objects.map((obj) => (
+              <li key={obj} className="code-analysis__object">
+                <span className="code-analysis__object-icon" aria-hidden="true">⊞</span>
+                <code>{obj}</code>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {sqlText && (
+        <div className="code-analysis__sql">
+          <button
+            type="button"
+            className="code-analysis__sql-toggle"
+            aria-expanded={sqlOpen}
+            onClick={() => setSqlOpen((v) => !v)}
+          >
+            View SQL · task / rule
+          </button>
+          {sqlOpen && (
+            <pre className="code-analysis__sql-pre">{sqlText}</pre>
           )}
         </div>
       )}
@@ -417,17 +476,25 @@ function RcaReport({
   )
 }
 
-function KnowledgeForm({ rca, onClose, onSaved }) {
+function KnowledgeForm({ rca, fixSuggestion, onClose, onSaved }) {
   const [pattern, setPattern] = useState((rca?.evidence?.[2] || rca?.summary || '').slice(0, 200))
   const [category, setCategory] = useState(rca?.category || 'Unknown Failure')
   const [rootCause, setRootCause] = useState(rca?.summary || '')
   const [fix, setFixText] = useState(rca?.remediation?.immediate_fix || '')
+  const [sqlCode, setSqlCode] = useState(fixSuggestion?.after || rca?.code_analysis?.sql_code || '')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
 
   const submit = () => {
     setSaving(true)
-    api.addRcaKnowledge({ pattern, category, root_cause: rootCause, fix, added_by: 'user' })
+    api.addRcaKnowledge({
+      pattern,
+      category,
+      root_cause: rootCause,
+      fix,
+      sql_code: sqlCode,
+      added_by: 'user',
+    })
       .then(() => {
         setSaved(true)
         setTimeout(() => {
@@ -462,6 +529,16 @@ function KnowledgeForm({ rca, onClose, onSaved }) {
       <div className="field">
         <label>Fix / Resolution</label>
         <textarea rows={2} value={fix} onChange={(e) => setFixText(e.target.value)} />
+      </div>
+      <div className="field">
+        <label>SQL Code (optional)</label>
+        <textarea
+          rows={6}
+          value={sqlCode}
+          onChange={(e) => setSqlCode(e.target.value)}
+          placeholder="Paste the fixed / resolution SQL here"
+          style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', fontSize: 12 }}
+        />
       </div>
       <div style={{ display: 'flex', gap: 10 }}>
         <button className="btn" disabled={saving || !pattern} onClick={submit}>
@@ -637,6 +714,7 @@ export default function Workbench({
             showKnowledgeForm ? (
               <KnowledgeForm
                 rca={rca}
+                fixSuggestion={fix}
                 onClose={() => setShowKnowledgeForm(false)}
                 onSaved={onOpenKnowledge}
               />

@@ -39,6 +39,10 @@ class TaskMonitoringConfig(BaseModel):
 class DQMonitoringConfig(BaseModel):
     table_fqn: str = "CPH_DB_PRE_PROD.MODEL_V2.DQM_VALIDATION_SUMMARY"
     subject_area: str = "Lynkuet LAAD"
+    result_limit: int = Field(default=500, ge=1, le=10_000)
+    # default = all failures in date range; custom = first N (1…200)
+    revalidate_mode: str = Field(default="default", pattern="^(default|custom)$")
+    revalidate_limit: Optional[int] = Field(default=None, ge=1, le=200)
 
 
 class MonitoringSettings(BaseModel):
@@ -76,6 +80,17 @@ class Pipeline(BaseModel):
     log_ref: Optional[str] = None
     upstream: List[str] = []
     downstream: List[str] = []
+
+
+class DQRevalidateRequest(BaseModel):
+    """Single-check live revalidate — keyed by QC ID + subject area."""
+    qc_id: str
+    subject_area: Optional[str] = None
+    id: Optional[str] = None
+    status: Optional[str] = None
+    error: Optional[str] = None
+    pass_count: Optional[int] = None
+    fail_count: Optional[int] = None
 
 
 class RCARequest(BaseModel):

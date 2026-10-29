@@ -42,6 +42,7 @@ DQ_RULES_TABLE_FQN = os.getenv(
     "DQ_RULES_TABLE_FQN",
     "CPH_DB_PROD.MODEL_V2.CONFIG_LYNKUET",
 )
+DQ_RESULT_LIMIT = int(os.getenv("DQ_RESULT_LIMIT", "500"))
 
 # Snowflake task monitoring (ACCOUNT_USAGE + TASK_HISTORY) — env defaults; overridden by settings file
 TASK_MONITOR_DATABASE = os.getenv("TASK_MONITOR_DATABASE", "CPH_DB_PROD")
@@ -117,6 +118,9 @@ _DEFAULT_SETTINGS: Dict[str, Any] = {
             "table_fqn": DQ_TABLE_FQN,
             "subject_area": DQ_SUBJECT_AREA,
             "rules_table_fqn": DQ_RULES_TABLE_FQN,
+            "result_limit": DQ_RESULT_LIMIT,
+            "revalidate_mode": "default",
+            "revalidate_limit": None,
         },
         "lineage": {
             "source_schemas": LINEAGE_SOURCE_SCHEMAS,
@@ -526,14 +530,38 @@ def get_task_monitoring_config(settings: Dict[str, Any] | None = None) -> Dict[s
     }
 
 
+# Custom dashboard revalidate: at most this many failing checks per run.
+DQ_REVALIDATE_CUSTOM_MAX = 200
+
+
 def get_dq_monitoring_config(settings: Dict[str, Any] | None = None) -> Dict[str, Any]:
     """Effective DQ monitoring config (settings file overrides env defaults)."""
     s = settings or load_settings()
     dq = s.get("monitoring", {}).get("dq", {})
+    try:
+        raw_result_limit = dq.get("result_limit")
+        result_limit = int(
+            DQ_RESULT_LIMIT if raw_result_limit in (None, "") else raw_result_limit
+        )
+    except (TypeError, ValueError):
+        result_limit = DQ_RESULT_LIMIT
+    mode = str(dq.get("revalidate_mode") or "default").strip().lower()
+    if mode not in ("default", "custom"):
+        mode = "default"
+    revalidate_limit = None
+    raw_rv = dq.get("revalidate_limit")
+    if raw_rv not in (None, ""):
+        try:
+            revalidate_limit = int(raw_rv)
+        except (TypeError, ValueError):
+            revalidate_limit = None
     return {
         "table_fqn": str(dq.get("table_fqn") or DQ_TABLE_FQN).strip(),
         "subject_area": str(dq.get("subject_area") or DQ_SUBJECT_AREA).strip(),
         "rules_table_fqn": str(dq.get("rules_table_fqn") or DQ_RULES_TABLE_FQN).strip(),
+        "result_limit": result_limit,
+        "revalidate_mode": mode,
+        "revalidate_limit": revalidate_limit,
     }
 
 
@@ -592,6 +620,15 @@ def validate_monitoring_settings(monitoring: Dict[str, Any]) -> list[str]:
         errors.append("Future days must be at least 1.")
     if not dq["table_fqn"]:
         errors.append("DQ monitoring requires a fully qualified table name.")
+    # result_limit is legacy/ignored for dashboard fetches; clamp only if present.
+    if "result_limit" in (monitoring.get("dq") or {}) and not 1 <= dq["result_limit"] <= 10_000:
+        errors.append("Maximum DQ rows must be between 1 and 10000.")
+    if dq["revalidate_mode"] == "custom":
+        lim = dq.get("revalidate_limit")
+        if lim is None or not isinstance(lim, int) or not 1 <= lim <= DQ_REVALIDATE_CUSTOM_MAX:
+            errors.append(
+                f"Custom revalidate limit must be an integer between 1 and {DQ_REVALIDATE_CUSTOM_MAX}."
+            )
     return errors
 
 

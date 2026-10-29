@@ -158,20 +158,29 @@ export const api = {
   testConnectivity: (body) => req('/connectivity', { method: 'POST', body: JSON.stringify(body) }),
   getSettings: () => req('/settings'),
   saveSettings: (body) => req('/settings', { method: 'POST', body: JSON.stringify(body) }),
-  summary: ({ status = 'FAILED', date_from, date_to } = {}) => {
-    const q = new URLSearchParams()
-    if (status) q.set('status', status)
-    if (date_from) q.set('date_from', date_from)
-    if (date_to) q.set('date_to', date_to)
-    return req('/summary?' + q.toString())
+  summary: ({ status = 'ALL', date_from, date_to, q: search, platform } = {}) => {
+    const params = new URLSearchParams()
+    if (status) params.set('status', status)
+    if (date_from) params.set('date_from', date_from)
+    if (date_to) params.set('date_to', date_to)
+    if (search) params.set('q', search)
+    if (platform && platform !== 'ALL') params.set('platform', platform)
+    return req('/summary?' + params.toString())
   },
-  dqSummary: ({ date_from, date_to, revalidate } = {}) => {
-    const q = new URLSearchParams()
-    if (date_from) q.set('date_from', date_from)
-    if (date_to) q.set('date_to', date_to)
-    if (revalidate === false) q.set('revalidate', 'false')
-    if (revalidate === true) q.set('revalidate', 'true')
-    return req('/dq/summary?' + q.toString())
+  dqSummary: ({
+    date_from, date_to, revalidate, status = 'ALL', q: search,
+    page = 1, page_size = 10,
+  } = {}) => {
+    const params = new URLSearchParams()
+    if (date_from) params.set('date_from', date_from)
+    if (date_to) params.set('date_to', date_to)
+    if (revalidate === false) params.set('revalidate', 'false')
+    if (revalidate === true) params.set('revalidate', 'true')
+    if (status) params.set('status', status)
+    if (search) params.set('q', search)
+    params.set('page', String(page || 1))
+    params.set('page_size', String(page_size || 10))
+    return req('/dq/summary?' + params.toString())
   },
   logs: (id) => req(`/pipelines/${id}/logs`),
   rca: (pipeline_id, extra_context, { date_from, date_to } = {}) =>
@@ -187,8 +196,28 @@ export const api = {
     if (subjectArea) q.set('subject_area', subjectArea)
     return req(`/dq/details/${encodeURIComponent(qcId)}?${q.toString()}`)
   },
+  dqRevalidateOne: ({ qc_id, subject_area, id, status, error, pass_count, fail_count } = {}) =>
+    req('/dq/revalidate', {
+      method: 'POST',
+      body: JSON.stringify({
+        qc_id,
+        subject_area: subject_area || null,
+        id: id || null,
+        status: status || null,
+        error: error || null,
+        pass_count: pass_count ?? null,
+        fail_count: fail_count ?? null,
+      }),
+    }),
   incidents: () => req('/incidents'),
   addIssue: (body) => req('/issues', { method: 'POST', body: JSON.stringify(body) }),
   getRcaKnowledge: () => req('/rca/knowledge'),
   addRcaKnowledge: (body) => req('/rca/knowledge', { method: 'POST', body: JSON.stringify(body) }),
+  updateRcaKnowledge: (index, body) => req(`/rca/knowledge/${encodeURIComponent(index)}`, {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  }),
+  deleteRcaKnowledge: (index) => req(`/rca/knowledge/${encodeURIComponent(index)}`, {
+    method: 'DELETE',
+  }),
 }

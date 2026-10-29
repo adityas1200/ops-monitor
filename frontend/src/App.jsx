@@ -38,6 +38,8 @@ function slimRcaForChat(rca) {
 export default function App() {
   const [tab, setTab] = useState('dashboard')
   const [platforms, setPlatforms] = useState({ snowflake: false, aws: false })
+  /** Bumped on Settings save so Dashboard picks up DQ revalidate mode/limit. */
+  const [settingsVersion, setSettingsVersion] = useState(0)
   const [activePipeline, setActivePipeline] = useState(null)
   const [chatOpen, setChatOpen] = useState(true)
   const [dashboardContext, setDashboardContext] = useState(null)
@@ -217,6 +219,7 @@ export default function App() {
           <div style={{ display: tab === 'dashboard' ? 'block' : 'none' }}>
             <Dashboard
               platforms={platforms}
+              settingsVersion={settingsVersion}
               onRunRCA={openInWorkbench}
               onSelect={setActivePipeline}
               onReportError={reportActivityError}
@@ -247,7 +250,10 @@ export default function App() {
           </div>
           <div style={{ display: tab === 'settings' ? 'block' : 'none' }}>
             <Settings
-              onSaved={(p) => setPlatforms(p)}
+              onSaved={(p) => {
+                setPlatforms(p)
+                setSettingsVersion((n) => n + 1)
+              }}
               onReportError={reportActivityError}
             />
           </div>

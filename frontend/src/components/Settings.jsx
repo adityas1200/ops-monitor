@@ -38,8 +38,12 @@ const DEFAULT_TASKS = {
   future_days: 7,
 }
 
+const DQ_REVALIDATE_CUSTOM_MAX = 200
+
 const DEFAULT_DQ = {
   table_fqn: 'CPH_DB_PRE_PROD.MODEL_V2.DQM_VALIDATION_SUMMARY',
+  revalidate_mode: 'default',
+  revalidate_limit: '',
 }
 
 function resolveSfAuthMethod(authenticator) {
@@ -106,9 +110,49 @@ function resolveTasks(tasks) {
 
 function resolveDq(dq) {
   const merged = mergeMonitoringDefaults(DEFAULT_DQ, dq)
+  const mode = String(merged.revalidate_mode || 'default').toLowerCase() === 'custom'
+    ? 'custom'
+    : 'default'
+  const rawLimit = merged.revalidate_limit
+  const limitStr = rawLimit == null || rawLimit === ''
+    ? ''
+    : String(rawLimit).replace(/\D/g, '')
   return {
     table_fqn: trimOrEmpty(merged.table_fqn) || DEFAULT_DQ.table_fqn,
+    revalidate_mode: mode,
+    revalidate_limit: limitStr,
   }
+}
+
+function validateDqRevalidate(dq) {
+  /** Blocks Save when Custom is selected without a valid 1…200 limit. */
+  const mode = (dq?.revalidate_mode || 'default') === 'custom' ? 'custom' : 'default'
+  if (mode !== 'custom') return null
+  const raw = String(dq?.revalidate_limit ?? '').trim()
+  if (!raw || !/^\d+$/.test(raw)) {
+    return `Enter a revalidate limit between 1 and ${DQ_REVALIDATE_CUSTOM_MAX}.`
+  }
+  const n = Number(raw)
+  if (!Number.isInteger(n) || n < 1 || n > DQ_REVALIDATE_CUSTOM_MAX) {
+    return `Revalidate limit must be between 1 and ${DQ_REVALIDATE_CUSTOM_MAX}.`
+  }
+  return null
+}
+
+function dqRevalidateFieldError(dq) {
+  // Only show under the field after the user typed something invalid (not empty).
+  const mode = (dq?.revalidate_mode || 'default') === 'custom' ? 'custom' : 'default'
+  if (mode !== 'custom') return null
+  const raw = String(dq?.revalidate_limit ?? '').trim()
+  if (!raw) return null
+  if (!/^\d+$/.test(raw)) {
+    return `Revalidate limit must be between 1 and ${DQ_REVALIDATE_CUSTOM_MAX}.`
+  }
+  const n = Number(raw)
+  if (!Number.isInteger(n) || n < 1 || n > DQ_REVALIDATE_CUSTOM_MAX) {
+    return `Revalidate limit must be between 1 and ${DQ_REVALIDATE_CUSTOM_MAX}.`
+  }
+  return null
 }
 
 function snowflakePayload(sf, sfAuthMethod, idpUrl) {
@@ -193,11 +237,15 @@ function dqPreview(dq) {
   const table = dq.table_fqn || '…'
   return `SELECT QC_ID, CHECK_TYPE, STATUS, PASS_COUNT, FAIL_COUNT
 FROM ${table}
-ORDER BY RUN_DATE DESC
-LIMIT 500`
+WHERE RUN_DATE between :date_from and :date_to
+QUALIFY ROW_NUMBER() OVER (
+  PARTITION BY QC_ID, SUBJECT_AREA
+  ORDER BY RUN_DATE DESC
+) = 1
+ORDER BY RUN_DATE DESC`
 }
 
-function ConfigField({ label, hint, type = 'text', value, onChange, disabled }) {
+function ConfigField({ label, hint, type = 'text', value, onChange, disabled, min, max }) {
   return (
     <div className="field">
       <label>{label}</label>
@@ -205,6 +253,8 @@ function ConfigField({ label, hint, type = 'text', value, onChange, disabled }) 
         type={type}
         value={value ?? ''}
         disabled={disabled}
+        min={min}
+        max={max}
         onChange={(e) => onChange(e.target.value)}
       />
       {hint && <span className="field-hint">{hint}</span>}
@@ -224,6 +274,16 @@ function StatusPill({ name, status, detail }) {
 }
 
 function buildSettingsPayload(aws, sf, sfAuthMethod, idpUrl, tasks, dq) {
+  const resolvedDq = resolveDq(dq)
+  const dqPayload = {
+    table_fqn: resolvedDq.table_fqn,
+    revalidate_mode: resolvedDq.revalidate_mode,
+  }
+  if (resolvedDq.revalidate_mode === 'custom' && resolvedDq.revalidate_limit !== '') {
+    dqPayload.revalidate_limit = Number(resolvedDq.revalidate_limit)
+  } else {
+    dqPayload.revalidate_limit = null
+  }
   return {
     aws: {
       region: trimOrEmpty(aws.region),
@@ -234,7 +294,7 @@ function buildSettingsPayload(aws, sf, sfAuthMethod, idpUrl, tasks, dq) {
     snowflake: snowflakePayload(sf, sfAuthMethod, idpUrl),
     monitoring: {
       tasks: resolveTasks(tasks),
-      dq: resolveDq(dq),
+      dq: dqPayload,
     },
   }
 }
@@ -291,7 +351,8 @@ export default function Settings({ onSaved, onReportError }) {
     setIdpUrl(resolveIdpUrl(snowflake.authenticator))
     const mon = s.monitoring || {}
     setTasks(resolveTasks(mon.tasks))
-    setDq(resolveDq(mon.dq))
+    // Always resolve revalidate_mode/limit so reload after Save keeps Default/Custom.
+    setDq(resolveDq(mon.dq || {}))
     setLoaded(true)
     return {
       aws: s.aws || {},
@@ -350,6 +411,12 @@ export default function Settings({ onSaved, onReportError }) {
     if (sfErr) {
       setStatus({ type: 'error', text: sfErr })
       onReportError?.({ tab: 'Settings', action: 'save settings', error: sfErr })
+      return
+    }
+    const dqErr = validateDqRevalidate(dq)
+    if (dqErr) {
+      setStatus({ type: 'error', text: dqErr })
+      onReportError?.({ tab: 'Settings', action: 'save settings', error: dqErr })
       return
     }
     persistSettings(buildSettingsPayload(aws, sf, sfAuthMethod, idpUrl, tasks, dq))
@@ -650,17 +717,94 @@ export default function Settings({ onSaved, onReportError }) {
                 key={k}
                 label={label}
                 hint={hint}
+                type="text"
                 value={displayDq[k] ?? ''}
-                onChange={(v) => setDq({ ...displayDq, [k]: v })}
+                onChange={(v) => setDq((current) => ({ ...current, [k]: v }))}
               />
             ))}
+            <div className="settings-revalidate">
+              <h4 className="settings-revalidate__heading">Revalidate</h4>
+              <p className="muted settings-section-desc">
+                Controls how many failing DQ checks Dashboard <strong>Revalidate</strong> runs live.
+                Default uses every failure in the selected date range; Custom caps the count.
+              </p>
+              <div className="settings-revalidate__radios" role="radiogroup" aria-label="Revalidate mode">
+                <label className="settings-radio">
+                  <input
+                    type="radio"
+                    name="dq-revalidate-mode"
+                    value="default"
+                    checked={displayDq.revalidate_mode !== 'custom'}
+                    onChange={() => setDq((current) => ({
+                      ...resolveDq(current),
+                      revalidate_mode: 'default',
+                    }))}
+                  />
+                  <span>Default</span>
+                </label>
+                <label className="settings-radio">
+                  <input
+                    type="radio"
+                    name="dq-revalidate-mode"
+                    value="custom"
+                    checked={displayDq.revalidate_mode === 'custom'}
+                    onChange={() => setDq((current) => ({
+                      ...resolveDq(current),
+                      revalidate_mode: 'custom',
+                    }))}
+                  />
+                  <span>Custom</span>
+                </label>
+              </div>
+              {displayDq.revalidate_mode === 'custom' && (
+                <div className="field">
+                  <label htmlFor="dq-revalidate-limit">Enter revalidate limit</label>
+                  <input
+                    id="dq-revalidate-limit"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    autoComplete="off"
+                    value={displayDq.revalidate_limit ?? ''}
+                    onChange={(e) => {
+                      const digits = e.target.value.replace(/\D/g, '')
+                      setDq((current) => ({
+                        ...resolveDq(current),
+                        revalidate_mode: 'custom',
+                        revalidate_limit: digits,
+                      }))
+                    }}
+                    aria-invalid={Boolean(dqRevalidateFieldError(displayDq))}
+                    aria-describedby={dqRevalidateFieldError(displayDq) ? 'dq-revalidate-limit-err' : undefined}
+                  />
+                  <span className="field-hint">
+                    Integer from 1 to {DQ_REVALIDATE_CUSTOM_MAX}
+                  </span>
+                  {dqRevalidateFieldError(displayDq) && (
+                    <span id="dq-revalidate-limit-err" className="field-error" role="alert">
+                      {dqRevalidateFieldError(displayDq)}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
           <div className="card config-preview-card">
             <h3>Active query preview</h3>
-            <p className="muted settings-section-desc">Rows are filtered by date range.</p>
+            <p className="muted settings-section-desc">
+              Latest row per QC + subject area in the selected Dashboard date range.
+            </p>
             <pre className="config-preview">{dqPreview(displayDq)}</pre>
             <dl className="config-summary">
               <div><dt>Table</dt><dd><code>{displayDq.table_fqn || '—'}</code></dd></div>
+              <div>
+                <dt>Revalidate</dt>
+                <dd>
+                  {(displayDq.revalidate_mode || 'default') === 'custom'
+                    ? `Custom (limit ${displayDq.revalidate_limit || '—'})`
+                    : 'Default (all failures in date range)'}
+                </dd>
+              </div>
             </dl>
           </div>
         </div>

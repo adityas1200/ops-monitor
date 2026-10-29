@@ -29,13 +29,23 @@ class Orchestrator:
         return self.connectivity.check(settings=settings, ephemeral=ephemeral)
 
     def get_summary(self, status: Optional[str] = None,
-                    date_from: Optional[str] = None, date_to: Optional[str] = None) -> Dict[str, Any]:
-        return self.monitoring.summary(status, date_from, date_to)
+                    date_from: Optional[str] = None, date_to: Optional[str] = None,
+                    q: Optional[str] = None, platform: Optional[str] = None) -> Dict[str, Any]:
+        return self.monitoring.summary(
+            status, date_from, date_to, q=q, platform=platform,
+        )
 
     def get_dq_summary(self, date_from: Optional[str] = None,
                        date_to: Optional[str] = None,
-                       revalidate: bool = True) -> Dict[str, Any]:
-        return self.monitoring.dq_summary(date_from, date_to, revalidate=revalidate)
+                       revalidate: bool = True,
+                       status: Optional[str] = None,
+                       q: Optional[str] = None,
+                       page: Any = None,
+                       page_size: Any = None) -> Dict[str, Any]:
+        return self.monitoring.dq_summary(
+            date_from, date_to, revalidate=revalidate, status=status, q=q,
+            page=page, page_size=page_size,
+        )
 
     def run_rca(self, pipeline_id: str, extra_context: Optional[str] = None,
                 date_from: Optional[str] = None, date_to: Optional[str] = None,

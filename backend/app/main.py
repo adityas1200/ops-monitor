@@ -23,7 +23,7 @@ from app.core.config import (AWS_OPTIONAL_FIELDS, SF_OPTIONAL_FIELDS, is_keypair
                              validate_snowflake_settings)
 from app.memory.session_store import session_store
 from app.models.schemas import (ActivityErrorRequest, AddIssueRequest, ChatRequest,
-                                FixRequest, RCARequest, SettingsPayload)
+                                DQRevalidateRequest, FixRequest, RCARequest, SettingsPayload)
 
 app = FastAPI(title="ops-monitor", version="1.0.0",
               description="Agentic data-ops monitoring for Snowflake + AWS")
@@ -176,15 +176,24 @@ def update_settings(payload: SettingsPayload):
 
 # ---- Monitoring / Dashboard ------------------------------------------
 @app.get("/api/summary")
-def summary(status: Optional[str] = Query(default="FAILED"),
-            date_from: Optional[str] = None, date_to: Optional[str] = None):
-    return orchestrator.get_summary(status, date_from, date_to)
+def summary(status: Optional[str] = Query(default="ALL"),
+            date_from: Optional[str] = None, date_to: Optional[str] = None,
+            q: Optional[str] = None, platform: Optional[str] = None):
+    return orchestrator.get_summary(
+        status, date_from, date_to, q=q, platform=platform,
+    )
 
 
 @app.get("/api/dq/summary")
 def dq_summary(date_from: Optional[str] = None, date_to: Optional[str] = None,
-               revalidate: bool = True):
-    return orchestrator.get_dq_summary(date_from, date_to, revalidate=revalidate)
+               revalidate: bool = True, status: Optional[str] = "ALL",
+               q: Optional[str] = None,
+               page: int = Query(default=1, ge=1),
+               page_size: int = Query(default=10, ge=1, le=500)):
+    return orchestrator.get_dq_summary(
+        date_from, date_to, revalidate=revalidate, status=status, q=q,
+        page=page, page_size=page_size,
+    )
 
 
 @app.get("/api/dq/details/{qc_id}")
@@ -203,6 +212,28 @@ def dq_details(qc_id: str, subject_area: Optional[str] = None):
         database, schema, warehouse = dq.resolve_rule_context(rule, sql_code)
         sql_results = dq.execute_dq_sql(sql_code, database=database, schema=schema, warehouse=warehouse)
     return {"qc_id": qc_id, "subject_area": subject_area, "found": True, "rule": rule, "sql_results": sql_results}
+
+
+@app.post("/api/dq/revalidate")
+def dq_revalidate_one(payload: DQRevalidateRequest):
+    """Live-revalidate one DQ check (QC ID + subject area)."""
+    from app.connectors.dq_connector import DQConnector
+    qc = (payload.qc_id or "").strip()
+    if not qc:
+        raise HTTPException(status_code=400, detail="qc_id is required")
+    dq = DQConnector()
+    result = dq.revalidate_one(
+        qc,
+        payload.subject_area,
+        recorded_status=payload.status,
+        check_id=payload.id,
+        description=payload.error,
+        pass_count=payload.pass_count,
+        fail_count=payload.fail_count,
+    )
+    if not result.get("ok"):
+        raise HTTPException(status_code=400, detail=result.get("error") or "Revalidate failed")
+    return result
 
 
 @app.get("/api/pipelines/{pipeline_id}/logs")
@@ -281,52 +312,46 @@ def rca(req: RCARequest):
 def get_rca_knowledge():
     """Return all user-contributed RCA knowledge rules."""
     from app.core.config import SKILLS_DIR
-    p = SKILLS_DIR / "rca_knowledge.md"
-    if not p.exists():
-        return {"rules": []}
-    content = p.read_text(encoding="utf-8")
-    rules = []
-    current: dict = {}
-    for line in content.split("\n"):
-        stripped = line.strip()
-        if stripped == "---":
-            if current.get("PATTERN"):
-                rules.append(current)
-            current = {}
-            continue
-        if ":" in stripped and stripped.split(":")[0].strip().upper() in (
-            "PATTERN", "CATEGORY", "ROOT_CAUSE", "FIX", "ADDED_BY", "ADDED_ON", "NOTES"
-        ):
-            key, _, val = stripped.partition(":")
-            current[key.strip().upper()] = val.strip()
-    if current.get("PATTERN"):
-        rules.append(current)
-    return {"rules": rules}
+    from app.core.rca_knowledge_store import read_rules
+    return {"rules": read_rules(SKILLS_DIR / "rca_knowledge.md")}
 
 
 @app.post("/api/rca/knowledge")
 def add_rca_knowledge(payload: dict):
     """Append a new RCA knowledge rule to the skill file."""
-    from datetime import datetime, timezone
     from app.core.config import SKILLS_DIR
-    p = SKILLS_DIR / "rca_knowledge.md"
-    pattern = payload.get("pattern", "").strip()
-    if not pattern:
-        return {"error": "pattern is required"}
-    entry = (
-        f"\n---\n"
-        f"PATTERN: {pattern}\n"
-        f"CATEGORY: {payload.get('category', 'Unknown Failure')}\n"
-        f"ROOT_CAUSE: {payload.get('root_cause', '')}\n"
-        f"FIX: {payload.get('fix', '')}\n"
-        f"ADDED_BY: {payload.get('added_by', 'user')}\n"
-        f"ADDED_ON: {datetime.now(timezone.utc).strftime('%Y-%m-%d')}\n"
-        f"NOTES: {payload.get('notes', '')}\n"
-        f"---\n"
-    )
-    with open(p, "a", encoding="utf-8") as f:
-        f.write(entry)
-    return {"status": "ok", "pattern": pattern}
+    from app.core.rca_knowledge_store import append_rule
+    try:
+        rule = append_rule(SKILLS_DIR / "rca_knowledge.md", payload or {})
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return {"status": "ok", "pattern": rule["PATTERN"], "rule": rule}
+
+
+@app.put("/api/rca/knowledge/{index}")
+def update_rca_knowledge(index: int, payload: dict):
+    """Update an existing RCA knowledge rule by list index."""
+    from app.core.config import SKILLS_DIR
+    from app.core.rca_knowledge_store import update_rule
+    try:
+        rule = update_rule(SKILLS_DIR / "rca_knowledge.md", index, payload or {})
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except IndexError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    return {"status": "ok", "index": index, "pattern": rule["PATTERN"], "rule": rule}
+
+
+@app.delete("/api/rca/knowledge/{index}")
+def delete_rca_knowledge(index: int):
+    """Delete an RCA knowledge rule by list index."""
+    from app.core.config import SKILLS_DIR
+    from app.core.rca_knowledge_store import delete_rule
+    try:
+        rule = delete_rule(SKILLS_DIR / "rca_knowledge.md", index)
+    except IndexError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    return {"status": "ok", "index": index, "pattern": rule.get("PATTERN"), "rule": rule}
 
 
 # ---- Fix --------------------------------------------------------------

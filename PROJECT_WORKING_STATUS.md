@@ -134,7 +134,7 @@ Already on `Develop`: deeper DQ evidence / diagnostics, `rca_context` through fi
 ### 5.1 Detect (Monitoring)
 
 1. `MonitoringAgent.collect()` / `summary()` pulls Snowflake task runs.
-2. `DQConnector.read_results()` + optional `revalidate` executes DQ rule SQL for live pass/fail.
+2. `DQConnector.read_results()` + optional `revalidate` executes DQ rule SQL for every failing check in range (live pass/fail).
 3. Long DQ rules get a 10-minute client network timeout; timeouts are not scored as data mismatches.
 4. Dashboard shows KPIs and failed/delayed rows; DQ has its own summary endpoints.
 

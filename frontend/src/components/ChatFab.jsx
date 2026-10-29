@@ -1,15 +1,123 @@
-import React from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
+
+const FAB_SIZE = 56
+const DEFAULT_RIGHT = 28
+/** Slightly lower than the previous 28px bottom offset. */
+const DEFAULT_BOTTOM = 14
+const DRAG_THRESHOLD_PX = 6
+const STORAGE_KEY = 'amq-assist-fab-pos'
+
+function clamp(n, min, max) {
+  return Math.min(max, Math.max(min, n))
+}
+
+function defaultPos() {
+  if (typeof window === 'undefined') return { x: 0, y: 0 }
+  return {
+    x: window.innerWidth - DEFAULT_RIGHT - FAB_SIZE,
+    y: window.innerHeight - DEFAULT_BOTTOM - FAB_SIZE,
+  }
+}
+
+function loadPos() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return defaultPos()
+    const parsed = JSON.parse(raw)
+    if (typeof parsed?.x !== 'number' || typeof parsed?.y !== 'number') return defaultPos()
+    return clampPos(parsed)
+  } catch {
+    return defaultPos()
+  }
+}
+
+function clampPos({ x, y }) {
+  if (typeof window === 'undefined') return { x, y }
+  const maxX = Math.max(0, window.innerWidth - FAB_SIZE)
+  const maxY = Math.max(0, window.innerHeight - FAB_SIZE)
+  return { x: clamp(x, 0, maxX), y: clamp(y, 0, maxY) }
+}
+
+function savePos(pos) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(pos))
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
 
 /**
- * Fixed circular AMQ Assist launcher.
+ * Fixed circular AMQ Assist launcher (draggable).
  */
 export default function ChatFab({ onOpen }) {
+  const [pos, setPos] = useState(loadPos)
+  const [dragging, setDragging] = useState(false)
+  const dragRef = useRef(null)
+
+  useEffect(() => {
+    const onResize = () => setPos((p) => clampPos(p))
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
+  const onPointerDown = useCallback((e) => {
+    if (e.button != null && e.button !== 0) return
+    const el = e.currentTarget
+    el.setPointerCapture?.(e.pointerId)
+    dragRef.current = {
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      originX: pos.x,
+      originY: pos.y,
+      moved: false,
+    }
+    setDragging(true)
+  }, [pos.x, pos.y])
+
+  const onPointerMove = useCallback((e) => {
+    const d = dragRef.current
+    if (!d || d.pointerId !== e.pointerId) return
+    const dx = e.clientX - d.startX
+    const dy = e.clientY - d.startY
+    if (!d.moved && (Math.abs(dx) > DRAG_THRESHOLD_PX || Math.abs(dy) > DRAG_THRESHOLD_PX)) {
+      d.moved = true
+    }
+    if (!d.moved) return
+    setPos(clampPos({ x: d.originX + dx, y: d.originY + dy }))
+  }, [])
+
+  const endDrag = useCallback((e) => {
+    const d = dragRef.current
+    if (!d || d.pointerId !== e.pointerId) return
+    dragRef.current = null
+    setDragging(false)
+    try {
+      e.currentTarget.releasePointerCapture?.(e.pointerId)
+    } catch {
+      /* already released */
+    }
+    if (d.moved) {
+      setPos((p) => {
+        const next = clampPos(p)
+        savePos(next)
+        return next
+      })
+      return
+    }
+    onOpen?.()
+  }, [onOpen])
+
   return (
     <button
       type="button"
-      className="chat-fab"
-      onClick={onOpen}
-      title="Open AMQ Assist"
+      className={`chat-fab${dragging ? ' is-dragging' : ''}`}
+      style={{ left: pos.x, top: pos.y, right: 'auto', bottom: 'auto' }}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={endDrag}
+      onPointerCancel={endDrag}
+      title="Open AMQ Assist (drag to move)"
       aria-label="Open AMQ Assist"
     >
       <span className="chat-fab__icon" aria-hidden="true">

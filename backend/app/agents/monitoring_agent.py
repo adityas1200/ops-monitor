@@ -3,13 +3,14 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set  # Any used by dq_summary page args
 
 from app.agents.base import BaseAgent
 from app.connectors.aws_connector import AWSConnector
 from app.connectors.dq_connector import DQConnector
 from app.connectors.snowflake_connector import SnowflakeConnector
 from app.core.config import load_settings, platforms_configured
+from app.core.dashboard_filters import filter_task_pipelines
 
 _COLLECT_CACHE: Dict[str, Any] = {"key": None, "ts": 0.0, "records": [], "filled": False}
 _COLLECT_CACHE_TTL_S = 90
@@ -96,7 +97,8 @@ class MonitoringAgent(BaseAgent):
         return r
 
     def summary(self, status_filter: Optional[str] = None,
-                date_from: Optional[str] = None, date_to: Optional[str] = None) -> Dict[str, Any]:
+                date_from: Optional[str] = None, date_to: Optional[str] = None,
+                q: Optional[str] = None, platform: Optional[str] = None) -> Dict[str, Any]:
         pipelines = self.collect(date_from, date_to)
 
         kpis = {
@@ -110,9 +112,9 @@ class MonitoringAgent(BaseAgent):
         for p in pipelines:
             kpis[key.get(p["status"], "running")] += 1
 
-        filtered = pipelines
-        if status_filter and status_filter.upper() != "ALL":
-            filtered = [p for p in pipelines if p["status"] == status_filter.upper()]
+        table = filter_task_pipelines(
+            pipelines, status=status_filter, q=q, platform=platform,
+        )
 
         # log new incidents (cheap in-process de-dupe; avoid O(n) file scans per row)
         for p in pipelines:
@@ -124,15 +126,27 @@ class MonitoringAgent(BaseAgent):
             "live_only": True,
             "platforms": platforms_configured(load_settings()),
             "kpis": kpis,
-            "pipelines": filtered,
+            "pipelines": table,
             "all_pipelines": pipelines,
+            "table_pipelines": table,
+            "match_count": len(table),
+            "status_filter": (status_filter or "ALL").upper(),
+            "q": (q or "").strip(),
+            "platform_filter": (platform or "ALL"),
             "errors": getattr(self, "_connector_errors", []),
         }
 
     def dq_summary(self, date_from: Optional[str] = None,
                    date_to: Optional[str] = None,
-                   revalidate: bool = True) -> Dict[str, Any]:
-        return DQConnector().summary(date_from, date_to, revalidate=revalidate)
+                   revalidate: bool = True,
+                   status: Optional[str] = None,
+                   q: Optional[str] = None,
+                   page: Any = None,
+                   page_size: Any = None) -> Dict[str, Any]:
+        return DQConnector().summary(
+            date_from, date_to, revalidate=revalidate, status=status, q=q,
+            page=page, page_size=page_size,
+        )
 
     def _log_incident(self, p: Dict[str, Any]) -> None:
         key = f"{p.get('id')}|{p.get('status')}"

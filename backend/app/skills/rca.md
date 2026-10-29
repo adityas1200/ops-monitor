@@ -655,6 +655,7 @@ When `prior_rca_cases` is provided:
 When `domain_knowledge` is provided:
 - These are rules contributed by the operations team.
 - If a rule matches, use its ROOT_CAUSE and FIX as the primary recommendation.
+- If `SQL_CODE` is present, treat it as the proven fixed SQL / resolution query for that pattern.
 - Credit: "Per operations team knowledge: ..."
 
 ---

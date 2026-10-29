@@ -1,273 +1,653 @@
-# ops-monitor — Agentic Data-Ops Monitoring System
+# Ops Monitor
 
-An agentic platform that monitors **Snowflake** (task logs / task graph) and **AWS**
-(Glue, Step Functions, CloudWatch, DynamoDB), detects failures & delays, runs
-**RCA with lineage / dependency analysis**, proposes **fixes with before/after code**,
-**validates them on a zero-copy Snowflake clone**, and lets you steer everything through
-a **chat interface**.
+Ops Monitor is a web application for monitoring data operations, investigating failures, and suggesting fixes. It reads live telemetry from Snowflake and, when configured, AWS. It combines that telemetry with lineage-aware root-cause analysis (RCA), an operator workbench, and an optional Claude-powered assistant.
 
-Built with a **FastAPI** backend (skill-driven agents wrapped in a Claude-Code-style
-harness, each with its own learning memory) and a **React** UI.
+> **Current operating mode:** live data only. The application does not include mock telemetry. Configure at least Snowflake before expecting monitoring data.
 
-> **Runs out of the box with zero credentials** — it ships in MOCK mode with realistic
-> seeded telemetry. Add real AWS/Snowflake credentials in **Settings** to switch to LIVE mode.
+## Contents
 
----
+- [What the application does](#what-the-application-does)
+- [Current system architecture](#current-system-architecture)
+- [Technology stack](#technology-stack)
+- [How the system works](#how-the-system-works)
+- [Prerequisites](#prerequisites)
+- [Configuration](#configuration)
+- [Run locally](#run-locally)
+- [Run with Docker](#run-with-docker)
+- [Testing and builds](#testing-and-builds)
+- [Deployment and infrastructure](#deployment-and-infrastructure)
+- [Data, persistence, and security](#data-persistence-and-security)
+- [API overview](#api-overview)
+- [Troubleshooting](#troubleshooting)
+- [Known gaps](#known-gaps)
 
-## Architecture
+## What the application does
 
+Ops Monitor provides:
+
+- A dashboard for Snowflake task status, data-quality (DQ) results, KPIs, and date/status filtering.
+- Optional AWS telemetry, with the implemented monitoring path focused on AWS Glue job runs.
+- Root-cause analysis using task history, DQ evidence, and upstream/downstream lineage.
+- A workbench that presents RCA evidence, a lineage graph, and suggested before/after fixes.
+- A knowledge base for reusable RCA guidance.
+- A chat interface (“AMQ Assist”) that routes requests to monitoring, RCA, and fix workflows.
+- Connection management for Snowflake and AWS.
+- SQL guardrails, an audit log, and an API-based approval flow for potentially risky SQL.
+
+The application currently supports **RCA and fix suggestions**. It does **not** contain the previously documented Test Agent, `/api/validate` endpoint, or zero-copy-clone validation workflow.
+
+## Current system architecture
+
+### Local development
+
+```text
+Browser
+  |
+  | http://localhost:5173
+  v
+React + Vite development server
+  |
+  | /api/* proxy
+  v
+FastAPI / Uvicorn on http://localhost:8001
+  |
+  +-- Snowflake: task history, DQ data, metadata, and lineage
+  +-- AWS: Glue telemetry and AWS connectivity checks (optional)
+  +-- Anthropic/Claude: enhanced reasoning and chat (optional)
+  +-- Local JSON: settings, agent memory, incidents, and SQL audit
 ```
-ops-monitor/
-├── backend/
-│   ├── app/
-│   │   ├── main.py                # FastAPI routes
-│   │   ├── core/config.py         # settings + Claude harness config
-│   │   ├── models/schemas.py      # pydantic models
-│   │   ├── skills/                # ⭐ one skill .md per agent (the contract/procedure)
-│   │   │   ├── connectivity.md  monitoring.md  rca.md  fix.md  test.md  chat.md
-│   │   ├── agents/                # ⭐ one module per skilled agent
-│   │   │   ├── base.py            # BaseAgent + ClaudeHarness (graceful degrade)
-│   │   │   ├── connectivity_agent.py  monitoring_agent.py  rca_agent.py
-│   │   │   ├── fix_agent.py  test_agent.py  chat_agent.py
-│   │   │   └── orchestrator.py    # coordinates all agents
-│   │   ├── connectors/            # snowflake_connector.py  aws_connector.py (live + mock)
-│   │   ├── memory/                # file-based agent memory + shared incident log
-│   │   └── data/mock_data.py      # seeded multi-platform telemetry + lineage
-│   └── requirements.txt
-└── frontend/                      # React + Vite UI
-    └── src/
-        ├── App.jsx
-        ├── api/client.js
-        └── components/  Dashboard / Workbench / LineageGraph / Settings / ChatWindow
+
+### Container and production design
+
+The production image is a **single container**:
+
+1. Node.js builds the React application into `frontend/dist`.
+2. Python runs FastAPI/Uvicorn on port `8001`.
+3. FastAPI serves both `/api/*` and the compiled React single-page application.
+
+There is no separately deployed frontend in the checked-in design. The frontend and backend are served by the same container and the same hostname.
+
+```text
+Browser
+  |
+  v
+Load balancer / container endpoint
+  |
+  v
+Ops Monitor container :8001
+  +-- React static files
+  +-- FastAPI /api/*
 ```
 
-### The agents (skill-driven + memory)
-| Agent | Skill file | Responsibility |
-|-------|-----------|----------------|
-| **Connectivity** | `connectivity.md` | Secure AWS + Snowflake connections, health probes, mock fallback |
-| **Monitoring** | `monitoring.md` | Read Glue/StepFn/CloudWatch/DynamoDB + Snowflake tasks; success/fail/delay/skip summary |
-| **RCA** | `rca.md` | Upstream/downstream lineage analysis, root cause, impact graph, interactive refinement |
-| **Fix** | `fix.md` | Identify & suggest fix with before/after code; editable via chat |
-| **Test** | `test.md` | Zero-copy clone on pre-prod, run validation suite, publish test summary |
-| **Chat** | `chat.md` | Intent routing front-door to all agents |
+## Technology stack
 
-Each agent **loads its skill markdown**, is **wrapped by a Claude harness**
-(`base.py::ClaudeHarness` — uses the Anthropic SDK if `ANTHROPIC_API_KEY` is set, otherwise
-falls back to deterministic logic), and owns an **`AgentMemory`** (JSON) so it learns from
-past incidents and user input. A shared **incident log** records every incident and
-user-reported issue for faster future resolution.
+### Backend
 
----
+- Python 3.12
+- FastAPI 0.115.0
+- Uvicorn 0.30.6
+- Pydantic 2.9.2
+- Snowflake Connector for Python 4.6.0
+- boto3 1.35.24
+- Anthropic Python SDK 0.116.0 or newer
+- File-based JSON persistence
 
-## Quick start
+See `backend/requirements.txt` for the authoritative dependency list.
 
-> **Note:** These steps are written for PowerShell on Windows. Use `;` to chain commands (not `&&`).
+### Frontend
 
-### 1. Backend (FastAPI) — port 8001
+- React 18.3
+- React DOM 18.3
+- React Markdown 9
+- Vite 5.4
+- Plain CSS and browser storage for UI preferences
 
-**First-time setup** (create the virtual environment and install packages):
+See `frontend/package.json` and `frontend/package-lock.json`.
+
+### Packaging and hosting
+
+- Multi-stage Docker build using Node 20 Alpine and Python 3.12 Slim
+- Docker Compose for a local production-style run
+- AWS ECS/Fargate task-definition template
+- Amazon ECR as the documented container registry
+- AWS Application Load Balancer (ALB) in the documented target architecture
+- AWS Secrets Manager for the Anthropic key
+- CloudWatch Logs for ECS logs
+- Optional EFS mounts for durable application state
+- Optional Cloudflare quick tunnel for temporary sharing
+
+## How the system works
+
+### 1. Startup
+
+- FastAPI creates the agent orchestrator.
+- A background thread warms the shared Snowflake connection.
+- If `frontend/dist` exists, FastAPI mounts the compiled frontend and provides SPA fallback routing.
+- Claude is enabled only when a usable `ANTHROPIC_API_KEY` is available; otherwise agents use deterministic fallbacks.
+
+### 2. Connection setup
+
+In the UI, open **Settings** and configure:
+
+- Snowflake using password, browser SSO, or key-pair authentication.
+- AWS credentials and region if AWS monitoring is needed.
+- Task and DQ monitoring targets.
+
+Settings are saved server-side to `backend/app/data/connection_settings.json`. Secret values are masked when settings are read through the API.
+
+### 3. Monitoring
+
+- `GET /api/summary` collects live Snowflake and optional AWS telemetry.
+- The monitoring layer accepts only records marked as live; no mock fallback is used.
+- Failed and delayed records are added to the incident log with in-process deduplication.
+- `GET /api/dq/summary` reads the configured DQ summary table.
+- Operators can request live DQ revalidation from the dashboard.
+
+### 4. RCA and fix suggestion
+
+1. The operator selects **Run RCA** for a task or DQ failure.
+2. `POST /api/rca` collects evidence, inspects lineage, checks prior knowledge/cache, and optionally asks Claude to improve the explanation.
+3. The Workbench displays root cause, evidence, impact, and lineage.
+4. `POST /api/fix` produces a grounded before/after suggestion and can incorporate Workbench RCA context.
+5. The operator reviews the suggestion. The current application does not automatically apply or validate it.
+
+`POST /api/remediate/{pipeline_id}` performs the available automated sequence: **RCA → fix suggestion**.
+
+### 5. Chat
+
+The chat agent classifies the operator’s intent and routes it to monitoring, RCA, fix, or general assistance. `/api/chat/stream` streams responses using Server-Sent Events (SSE). Chat sessions are held in process and are lost when the process restarts.
+
+### 6. Agent memory and knowledge
+
+- Per-agent JSON memory is stored under `backend/app/memory/store/`.
+- Incidents are stored in `incident_log.json`.
+- RCA knowledge is stored in `backend/app/skills/rca_knowledge.md`.
+- SQL decisions are recorded in `backend/app/data/sql_audit_log.json`.
+
+## Prerequisites
+
+Choose either native development tools or Docker.
+
+### Native development
+
+- Python 3.12
+- Node.js 20 recommended
+- npm
+- PowerShell commands are shown below; equivalent commands work on macOS/Linux.
+- Network access to configured Snowflake, AWS, and Anthropic endpoints.
+
+### Container run
+
+- Docker Desktop or another Docker Engine with Compose support.
+
+### Optional deployment tools
+
+- AWS CLI authenticated to the target AWS account.
+- Permission to use ECR, ECS, IAM, Secrets Manager, CloudWatch Logs, networking, and optionally EFS.
+- `cloudflared` only when using the temporary public tunnel script.
+
+## Configuration
+
+### Environment file
+
+From the repository root, copy the example file:
+
 ```powershell
-cd c:\Users\EKGAH\Documents\project\ops-monitor\backend
-C:\Users\EKGAH\AppData\Local\Programs\Python\Python312\python.exe -m venv .venv
-.\.venv\Scripts\pip.exe install -r requirements.txt
+Copy-Item .env.example .env
 ```
 
-**Every time — start the backend:**
-```powershell
-cd c:\Users\EKGAH\Documents\project\ops-monitor\backend
+Do not commit `.env`. The backend loads the root `.env` automatically.
 
-# Kill any existing process on port 8001 (fixes "WinError 10048: address already in use")
-$proc = Get-NetTCPConnection -LocalPort 8001 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique
-if ($proc) { $proc | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue } ; Start-Sleep 1 }
+### LLM settings
 
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8001
-```
-
-API docs at **http://localhost:8001/docs**.
-
-> **Troubleshooting port conflicts:** If you see `[WinError 10048] Only one usage of each socket address is normally permitted`, a previous server instance is still running. The startup script above handles this automatically. To do it manually:
-> ```powershell
-> # Find and kill the process using port 8001
-> Get-NetTCPConnection -LocalPort 8001 | Select-Object OwningProcess -Unique | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
-> ```
-
-### 2. Frontend (React + Vite) — port 5173
-
-**First-time setup** (install npm packages — only needed once):
-```powershell
-cd c:\Users\EKGAH\Documents\project\ops-monitor\frontend
-npm install
-```
-
-**Every time — start the frontend:**
-```powershell
-cd c:\Users\EKGAH\Documents\project\ops-monitor\frontend
-npm run dev
-```
-
-Open **http://localhost:5173**.
-
-### Health check (optional — verify both are up)
-```powershell
-try { "backend: " + (Invoke-RestMethod -Uri "http://localhost:8001/api/health" -TimeoutSec 2).status } catch { "backend: down" }
-try { "frontend: " + (Invoke-WebRequest -Uri "http://localhost:5173/" -TimeoutSec 2 -UseBasicParsing).StatusCode } catch { "frontend: down" }
-```
-
-### 3. Claude LLM (Chat Agent)
-
-The chat agent uses Claude for human-like responses. Configuration is in the `.env` file at the project root:
-```
-ANTHROPIC_API_KEY=mga-0f973d609f7786b62a3fcd443d20e0957d0a9fec
+```dotenv
+ANTHROPIC_API_KEY=
 ANTHROPIC_BASE_URL=https://chat.int.bayer.com/anthropic
 CLAUDE_MODEL=claude-sonnet-4.5
 ```
 
-**All three variables are required for LLM to work:**
-- `ANTHROPIC_API_KEY` — the MGA token for the corporate Anthropic gateway
-- `ANTHROPIC_BASE_URL` — the corporate gateway URL (the MGA token does NOT work with the public `api.anthropic.com`)
-- `CLAUDE_MODEL` — which model to use
+- `ANTHROPIC_API_KEY` is optional. Without it, deterministic agent fallbacks remain available.
+- `ANTHROPIC_BASE_URL` is required when using a key issued for the configured corporate gateway.
+- `CLAUDE_MODEL` selects the model.
 
-The backend loads `.env` automatically on startup — no manual environment variable setup needed. Without a valid key OR without the correct base URL, agents fall back to deterministic template responses.
+The application currently initializes the Anthropic SDK with the API key and relies on SDK environment handling for `ANTHROPIC_BASE_URL`.
 
-> **Why does LLM work from Claude Code but not from a manual terminal?**
-> Claude Code's process inherits `ANTHROPIC_BASE_URL` from its parent environment. A fresh PowerShell terminal does NOT have this variable. Without it, the Anthropic SDK sends requests to `api.anthropic.com` (the public API), but the MGA token is only valid for the corporate gateway. Adding `ANTHROPIC_BASE_URL` to `.env` fixes this permanently — the backend loads it regardless of which terminal starts it.
+### Monitoring settings
 
-### 4. Restart Servers After Code Changes
+The following environment variables provide defaults. Most connection and monitoring values can also be updated in the Settings UI.
 
-After modifying backend or frontend code, you must restart the corresponding server for changes to take effect.
+```dotenv
+DQ_TABLE_FQN=CPH_DB_PRE_PROD.MODEL_V2.DQM_VALIDATION_SUMMARY
+DQ_SUBJECT_AREA=Lynkuet LAAD
+DQ_RULES_TABLE_FQN=CPH_DB_PROD.MODEL_V2.CONFIG_LYNKUET
+TASK_MONITOR_DATABASE=CPH_DB_PROD
+TASK_NAME_PATTERN=TASK%
+TASK_MONITOR_WAREHOUSE=PROD_ETL_DAYLIGHT_WH_XL
+TASK_TELEMETRY_STATEMENT_TIMEOUT_S=180
+```
 
-**Restart the backend:**
+Additional optional backend settings include:
+
+- `TASK_HISTORICAL_MONTHS`
+- `TASK_FUTURE_DAYS`
+- `LINEAGE_SOURCE_SCHEMAS`
+- `LINEAGE_SOURCE_TABLE_PREFIXES`
+- `LINEAGE_SOURCE_TAG`
+- `LINEAGE_SOURCE_TAG_VALUES`
+- `LINEAGE_MAX_DEPTH`
+- `LINEAGE_MAX_LOOKUPS`
+- `LLM_CACHE_CONTROL`
+- `PORT`
+- `OPS_MONITOR_RELOAD`
+
+AWS and Snowflake credentials are normally entered through the UI and are not defined in `.env.example`.
+
+## Run locally
+
+### 1. Set up and start the backend
+
+From the repository root:
+
 ```powershell
-# Step 1: Kill the running backend process
-$proc = Get-NetTCPConnection -LocalPort 8001 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique
-if ($proc) { $proc | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue } ; Start-Sleep 1 }
-
-# Step 2: Start fresh
-cd c:\Users\EKGAH\Documents\project\ops-monitor\backend
+cd backend
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8001
 ```
 
-**Restart the frontend:**
-```powershell
-# Step 1: Kill the running Vite process (Ctrl+C in the terminal running it, or):
-Get-Process -Name "node" -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -eq "" } | Stop-Process -Force
+Backend endpoints:
 
-# Step 2: Start fresh
-cd c:\Users\EKGAH\Documents\project\ops-monitor\frontend
+- API: `http://localhost:8001`
+- Health: `http://localhost:8001/api/health`
+- Interactive OpenAPI docs: `http://localhost:8001/docs`
+
+### 2. Set up and start the frontend
+
+Open a second terminal at the repository root:
+
+```powershell
+cd frontend
+npm install
 npm run dev
 ```
 
-**Quick restart both (single script):**
+Open `http://localhost:5173`.
+
+Vite proxies `/api` calls to `http://localhost:8001`, so no frontend API URL configuration is required for normal local development.
+
+### 3. Configure a live connection
+
+1. Open **Settings**.
+2. Enter Snowflake connection details.
+3. Optionally enter AWS connection details.
+4. Test connectivity.
+5. Save the settings.
+6. Return to the Dashboard and refresh.
+
+Without a working live connection, the dashboard may be empty. That is expected.
+
+### Quick health check
+
 ```powershell
-# Kill existing servers
-$proc = Get-NetTCPConnection -LocalPort 8001 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique
-if ($proc) { $proc | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue } }
-Start-Sleep 1
-
-# Start backend in a new terminal
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd c:\Users\EKGAH\Documents\project\ops-monitor\backend; .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8001"
-
-# Start frontend in a new terminal
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd c:\Users\EKGAH\Documents\project\ops-monitor\frontend; npm run dev"
+Invoke-RestMethod http://localhost:8001/api/health | ConvertTo-Json -Depth 5
+Invoke-WebRequest http://localhost:5173 -UseBasicParsing | Select-Object StatusCode
 ```
 
-After restart, open **http://localhost:5173** and verify the chat responds naturally.
+## Run with Docker
 
-### 5. Verify LLM is Working
+Docker runs the same single-container shape intended for ECS:
 
-After starting the backend, run these checks to confirm the Claude LLM is active and responding:
+```powershell
+docker compose up --build
+```
 
-**Step 1: Check health endpoint**
+Open `http://localhost:8001`.
+
+Compose creates named volumes for:
+
+- `/app/backend/app/data`
+- `/app/backend/app/memory/store`
+
+Stop the application:
+
+```powershell
+docker compose down
+```
+
+To also delete the local persisted settings and memory volumes:
+
+```powershell
+docker compose down --volumes
+```
+
+## Testing and builds
+
+### Backend tests
+
+Tests use pytest, but pytest is not currently pinned in `backend/requirements.txt`. Install it in the development environment before running tests:
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m pip install pytest
+.\.venv\Scripts\python.exe -m pytest tests
+```
+
+Most tests are unit tests and do not require live Snowflake/AWS access. End-to-end behavior against external systems must be verified separately.
+
+### Frontend production build
+
+```powershell
+cd frontend
+npm ci
+npm run build
+```
+
+The output is written to `frontend/dist`.
+
+### Available npm commands
+
+- `npm run dev` — start Vite development server.
+- `npm run build` — create the production bundle.
+- `npm run preview` — preview the built frontend.
+
+There are currently no repository-defined lint/format commands and no checked-in CI/CD workflow.
+
+## Deployment and infrastructure
+
+### What is confirmed by this repository
+
+The repository contains:
+
+- A production `Dockerfile`.
+- `docker-compose.yml` for local image validation.
+- `deploy/ecs/task-definition.json` for AWS ECS/Fargate.
+- `deploy/ecs/secret.example.json` for the Anthropic secret shape.
+- Documentation for an intended AWS ECS/Fargate deployment.
+- `scripts/deploy-public.ps1` for a local single-port run and optional Cloudflare quick tunnel.
+
+### Where the frontend and backend are deployed
+
+In the checked-in container/ECS design:
+
+- **Frontend:** compiled into `frontend/dist` and served by FastAPI.
+- **Backend:** FastAPI/Uvicorn in the same container.
+- **Port:** `8001`.
+- **Public entry point:** expected to be an ALB DNS name or another reverse proxy/tunnel URL.
+
+The repository does **not** contain a verified live production URL, AWS account/region, running ECS service identifier, or other evidence that identifies a currently active deployment. Therefore, this README cannot truthfully name a live host. Confirm the active environment in the AWS console or with the owning platform team.
+
+### Infrastructure services already represented
+
+The current deployment design uses or anticipates:
+
+- **Amazon ECR** — container image registry.
+- **Amazon ECS on Fargate** — container runtime.
+- **Application Load Balancer** — HTTP entry point and health routing.
+- **AWS IAM** — task execution and application task roles.
+- **AWS Secrets Manager** — Anthropic API key injection.
+- **Amazon CloudWatch Logs** — container logs, using `/ecs/ops-monitor-prod` in the task template.
+- **Amazon EFS (recommended, not provisioned here)** — durable settings and memory.
+- **VPC and subnets** — ALB and Fargate task networking.
+- **Snowflake** — external operational data source, DQ source, and lineage source.
+- **AWS Glue** — optional monitored workload.
+- **AWS STS, Step Functions, CloudWatch Logs, and DynamoDB clients** — used by AWS connectivity/integration code.
+- **Anthropic-compatible gateway** — optional LLM provider.
+- **Cloudflare Tunnel** — optional temporary external access; not the primary production design.
+
+### Important deployment limitation
+
+`deploy/ecs/README.md` references these files, but they are not present in the repository:
+
+- `deploy/ecs/cloudformation.yml`
+- `deploy/ecs/deploy.ps1`
+- `deploy/ecs/deploy.sh`
+
+As a result, the documented CloudFormation deployment is **not currently runnable end-to-end from this checkout**. Do not run those referenced commands until the missing files are restored or recreated.
+
+### Manual ECS deployment using the available task definition
+
+The available task definition can be used only after infrastructure has been created separately:
+
+1. Build the image.
+2. Push it to ECR.
+3. Replace every placeholder in `deploy/ecs/task-definition.json`, including:
+   - `ACCOUNT_ID`
+   - `REGION`
+   - Image URI
+   - Execution role ARN
+   - Task role ARN
+   - Secrets Manager ARN
+4. Ensure the CloudWatch log group exists.
+5. Register the task definition.
+6. Update an existing ECS service.
+
+Example image build:
+
+```powershell
+docker build -t ops-monitor:latest .
+```
+
+Example registration and rollout after all placeholders are replaced:
+
+```powershell
+aws ecs register-task-definition --cli-input-json file://deploy/ecs/task-definition.json
+aws ecs update-service `
+  --cluster ops-monitor-prod `
+  --service ops-monitor-prod `
+  --task-definition ops-monitor `
+  --force-new-deployment
+```
+
+This assumes the ECR repository, roles, VPC, subnets, security groups, load balancer, target group, ECS cluster/service, log group, and secret already exist.
+
+### ECS runtime configuration
+
+The task definition template uses:
+
+- Fargate with `awsvpc` networking.
+- `512` CPU units and `1024` MiB memory.
+- Container port `8001`.
+- Health check: `GET /api/health`.
+- CloudWatch Logs with the `awslogs` driver.
+- Anthropic key from Secrets Manager.
+
+For persistent settings and agent memory, mount EFS at:
+
+```text
+/app/backend/app/data
+/app/backend/app/memory/store
+```
+
+Without persistent storage, replacing a Fargate task removes locally saved connection settings, audit data, and agent memory.
+
+### Temporary LAN/public sharing
+
+The PowerShell helper builds the frontend and starts the unified application:
+
+```powershell
+.\scripts\deploy-public.ps1
+```
+
+To request an ephemeral Cloudflare URL:
+
+```powershell
+.\scripts\deploy-public.ps1 -Tunnel
+```
+
+This is intended for temporary sharing, not a production deployment.
+
+## Data, persistence, and security
+
+### Local state
+
+Ops Monitor does not use an application database. It persists state in files:
+
+- `backend/app/data/connection_settings.json`
+- `backend/app/data/sql_audit_log.json`
+- `backend/app/memory/store/*.json`
+- `backend/app/skills/rca_knowledge.md`
+
+The first three locations should be treated as runtime data and backed up or mounted on durable storage where needed.
+
+### Caches
+
+The application uses short-lived in-process/file caches for monitoring, AWS telemetry, RCA, and DQ revalidation. Cache contents are performance aids, not a source of record.
+
+### Authentication and exposure
+
+The FastAPI application currently has:
+
+- No application-level login, JWT, or API-key middleware.
+- Permissive CORS (`*`).
+- Server-side storage of configured AWS and Snowflake credentials.
+
+Do not expose the service directly to the public internet. Production deployments should put it behind organization-approved authentication and network controls, such as a private network/VPN, authenticated reverse proxy, or ALB-integrated access layer. Restrict security groups and IAM permissions to the minimum required.
+
+### Secrets
+
+- Never commit `.env` or `connection_settings.json`.
+- Prefer Secrets Manager or another approved secret store in deployed environments.
+- Rotate any key that has been copied into documentation, logs, tickets, or source control.
+- Snowflake key-pair material and passwords saved through Settings are sensitive.
+
+### SQL guardrails
+
+The backend includes SQL classification, audit, and approval endpoints. These controls reduce risk but do not replace least-privilege Snowflake roles. Run the application with a role limited to the required databases, schemas, views, and safe operations.
+
+## API overview
+
+Interactive and authoritative API documentation is available at `/docs` while the backend is running.
+
+### Health and connectivity
+
+- `GET /api/health`
+- `GET /api/connectivity`
+- `POST /api/connectivity`
+- `GET /api/snowflake/warmup`
+- `GET /api/snowflake/session`
+- `GET /api/settings`
+- `POST /api/settings`
+
+### Monitoring and details
+
+- `GET /api/summary`
+- `GET /api/dq/summary`
+- `GET /api/dq/details/{qc_id}`
+- `GET /api/pipelines/{pipeline_id}/logs`
+
+### RCA, fixes, and knowledge
+
+- `POST /api/rca`
+- `POST /api/fix`
+- `POST /api/remediate/{pipeline_id}`
+- `GET /api/rca/knowledge`
+- `POST /api/rca/knowledge`
+
+### Chat and memory
+
+- `POST /api/chat`
+- `POST /api/chat/stream`
+- `POST /api/chat/activity-error`
+- `GET /api/incidents`
+- `POST /api/issues`
+- `GET /api/memory/{agent}`
+
+### SQL guardrail
+
+The backend also exposes `/api/guardrail/*` endpoints for SQL audit and approval operations. Use `/docs` for their current request/response schemas.
+
+There is no `/api/validate` endpoint in the current implementation.
+
+## Repository structure
+
+```text
+ops-monitor/
+├── backend/
+│   ├── app/
+│   │   ├── agents/          # Connectivity, monitoring, RCA, fix, and chat agents
+│   │   ├── connectors/      # Snowflake, DQ, lineage, AWS, and SQL guardrail
+│   │   ├── core/            # Configuration and settings
+│   │   ├── data/            # Runtime settings and SQL audit files
+│   │   ├── memory/          # JSON memory and chat session handling
+│   │   ├── models/          # API schemas
+│   │   ├── skills/          # Agent instructions and RCA knowledge
+│   │   └── main.py          # FastAPI application and routes
+│   ├── tests/
+│   └── requirements.txt
+├── frontend/
+│   ├── src/
+│   │   ├── api/
+│   │   ├── components/
+│   │   └── App.jsx
+│   └── package.json
+├── deploy/ecs/              # ECS notes, task definition, secret examples
+├── scripts/                 # Local/public launch helper
+├── Dockerfile
+├── docker-compose.yml
+└── .env.example
+```
+
+## Troubleshooting
+
+### Dashboard is empty
+
+- This application is live-only; there is no mock fallback.
+- Open Settings and verify Snowflake connectivity.
+- Check monitoring database/table names, warehouse access, and role permissions.
+- Inspect `GET /api/health` and `GET /api/connectivity`.
+
+### Port 8001 is already in use
+
+```powershell
+Get-NetTCPConnection -LocalPort 8001 |
+  Select-Object -ExpandProperty OwningProcess -Unique |
+  ForEach-Object { Stop-Process -Id $_ -Force }
+```
+
+### Claude is unavailable
+
 ```powershell
 (Invoke-RestMethod http://localhost:8001/api/health).llm | ConvertTo-Json
 ```
-Expected output:
-```json
-{
-  "available": true,
-  "model": "claude-sonnet-4.5",
-  "last_error": null
-}
-```
-- `available: true` → API key is set and client initialized
-- `last_error: null` → no errors on last LLM call
-- If `last_error` shows `authentication_error` → the MGA token in `.env` has expired; get a fresh one
 
-**Step 2: Test chat LLM response**
-```powershell
-$body = '{"message":"How are you","session_id":"verify"}'
-$r = Invoke-RestMethod -Uri "http://localhost:8001/api/chat" -Method Post -Body $body -ContentType "application/json" -TimeoutSec 30
-Write-Host "Reply length: $($r.reply.Length)"
-Write-Host "Intent: $($r.intent)"
-Write-Host ""
-Write-Host $r.reply.Substring(0, [Math]::Min(300, $r.reply.Length))
-```
-- **LLM working**: Reply length > 400, contains markdown formatting and contextual suggestions
-- **LLM NOT working** (template fallback): Reply length < 300, starts with "Hey! I'm doing great"
+Check:
 
-**Step 3: Test RCA agent LLM**
-```powershell
-$body = '{"pipeline_id":"dq_1_20260709_120000"}'
-$r = Invoke-RestMethod -Uri "http://localhost:8001/api/rca" -Method Post -Body $body -ContentType "application/json" -TimeoutSec 60
-Write-Host "RCA confidence: $($r.confidence)"
-Write-Host "Has root_cause: $($r.root_cause -ne $null)"
-Write-Host "Has code_analysis: $($r.code_analysis.llm_explanation -ne $null)"
-```
-- `confidence > 0.8` and `Has root_cause: True` → LLM is enhancing the RCA
+- `ANTHROPIC_API_KEY` exists in the root `.env`.
+- The key has not expired.
+- `ANTHROPIC_BASE_URL` is correct for the key issuer.
+- Corporate VPN/proxy access is available.
+- The backend was restarted after changing `.env`.
 
-**Troubleshooting:**
-| Symptom | Cause | Fix |
-|---------|-------|-----|
-| `available: false` | No `ANTHROPIC_API_KEY` in `.env` | Add valid key to `.env` and restart backend |
-| `last_error: authentication_error` | MGA token expired OR `ANTHROPIC_BASE_URL` missing | Ensure `.env` has `ANTHROPIC_BASE_URL=https://chat.int.bayer.com/anthropic`; get fresh MGA token if needed |
-| `last_error: connection error` | Corporate proxy/gateway down | Check VPN and `https://chat.int.bayer.com/anthropic` accessibility |
-| Reply is short/template-like | LLM call failed silently | Check `last_error` via health endpoint |
-| Works from Claude Code but not manual terminal | `ANTHROPIC_BASE_URL` was missing from `.env` | Already fixed — `.env` now includes it. Just restart backend |
+The core workflows still provide deterministic responses when Claude is unavailable.
 
-### 6. (Optional) Go LIVE
-Open **Settings** in the UI and enter AWS + Snowflake credentials. Saving any real
-credential automatically flips the platform from MOCK to LIVE mode. Provide a
-`preprod_account` for real zero-copy clone validation.
+### Snowflake SSO fails
 
----
+Browser SSO requires a browser session on the machine running the backend and may not be suitable for headless containers. Use an approved password or key-pair service identity for deployed workloads.
 
-## Using the platform
-1. **Dashboard** — KPI cards (success / failed / delayed / skipped / total), status filter
-   (defaults to **Failed**) and date range (defaults to **last 2 days**). Each failed/delayed
-   row has a **Run RCA** button. Chat is docked on the right.
-2. **Workbench** — failed & delayed jobs only. **Run RCA** → RCA summary + evidence +
-   **lineage graph** with root-cause/failed/impacted nodes highlighted → **Identify & Suggest
-   Fix** (before/after diff, editable) → **Validate fix** (zero-copy clone + test summary with
-   per-case **View details**: SQL run, expected/actual, evidence).
-3. **Chat (right pane)** — drive any agent: "run RCA and also check the crawler" (refines RCA),
-   "use MEDIUM warehouse" (modifies fix), "validate fix", "status", or report a new issue
-   ("add issue: …") which is stored in agent memory for future matching.
-4. **Settings** — AWS & Snowflake connections + live connectivity status.
+### Settings disappear after a container restart
 
----
+The container filesystem is ephemeral unless a Docker volume or EFS mount is attached to the data and memory paths documented above.
 
-## Key API endpoints
-| Method | Path | Purpose |
-|--------|------|---------|
-| GET | `/api/summary?status=&date_from=&date_to=` | Monitoring KPIs + pipelines |
-| GET | `/api/connectivity` | Connectivity agent report |
-| POST | `/api/rca` | RCA (with optional `extra_context` for refinement) |
-| POST | `/api/fix` | Suggest/modify fix (`user_edit`) |
-| POST | `/api/validate` | Zero-copy clone + validation tests |
-| POST | `/api/remediate/{id}` | End-to-end RCA → Fix → Test |
-| POST | `/api/chat` | Chat front-door (intent routed to agents) |
-| GET | `/api/incidents` | Incident log memory |
-| POST | `/api/issues` | Add a user-reported issue to memory |
-| GET/POST | `/api/settings` | Read (masked) / save connections |
+### ECS task cannot start
 
----
+Verify:
 
-## Notes & limitations
-- MOCK mode simulates the zero-copy clone (`CREATE DATABASE … CLONE …`) and tests so the full
-  flow is demonstrable without a Snowflake account; LIVE mode executes the real DDL on the
-  configured pre-prod account.
-- Live AWS reads implement the Glue path fully; Step Functions/DynamoDB follow the same
-  pattern and fall back to mock if unavailable.
-- Memory is transparent JSON under `backend/app/memory/store/` (auditable, portable).
-- The Claude harness is optional — every agent has a deterministic fallback so the tool is
-  always functional.
+- The image URI and region are correct.
+- Execution and task roles exist.
+- The task can reach ECR, Secrets Manager, Snowflake, and the LLM gateway.
+- The CloudWatch log group exists.
+- The secret ARN and JSON key are correct.
+- Port `8001` is allowed from the load balancer security group.
+
+## Known gaps
+
+- No checked-in CI/CD workflow.
+- No checked-in lint or formatting configuration.
+- `pytest` is not included in `backend/requirements.txt`.
+- Referenced CloudFormation and deployment scripts are missing.
+- No application-level authentication.
+- Runtime settings and memory are file-based rather than database-backed.
+- No verified production hostname or active deployment metadata is stored in the repository.
+- AWS telemetry is not equally complete for every probed AWS service; Glue is the primary implemented monitoring path.
+- The Test Agent, `/api/validate`, and zero-copy validation flow are not part of the current codebase.

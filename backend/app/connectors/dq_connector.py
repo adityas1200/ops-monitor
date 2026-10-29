@@ -9,9 +9,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-# Cap live revalidation on dashboard so a backlog of failures can't hang the UI.
-# Full live truth for a single check still happens in View Details / RCA.
-_MAX_LIVE_REVALIDATE = 8
+# Hard bound for dashboard DQ reads (not user-editable; date range is the real filter).
+# Live revalidate runs every FAILED/WARNING/DELAYED row within this loaded set.
+_DQ_FETCH_HARD_CAP = 10_000
 _CACHE_FILE = "dq_revalidate_cache.json"
 _CACHE_LOCK = threading.Lock()
 _CACHE_TTL_SECONDS = 30 * 60  # 30 minutes
@@ -37,8 +37,14 @@ def _has_write_keyword(sql: str) -> bool:
 
 from app.connectors.snowflake_connector import SnowflakeConnector
 from app.connectors.sql_guardrail import log_sql
-from app.core.config import (MEMORY_DIR, get_dq_monitoring_config, load_settings,
+from app.core.config import (DQ_REVALIDATE_CUSTOM_MAX, MEMORY_DIR,
+                             get_dq_monitoring_config, load_settings,
                              platforms_configured, snowflake_configured)
+from app.core.dashboard_filters import (
+    failing_checks_preview,
+    filter_dq_checks,
+    paginate_rows,
+)
 
 
 def _cache_path() -> Path:
@@ -47,8 +53,8 @@ def _cache_path() -> Path:
 
 
 def _cache_key(date_from: Optional[str], date_to: Optional[str]) -> str:
-    # Suffix invalidates older caches that stored every historical run in the window.
-    return f"{date_from or ''}|{date_to or ''}|latest1"
+    # Suffix invalidates older caches (full historical window, then capped 600-row payloads).
+    return f"{date_from or ''}|{date_to or ''}|latest2_full"
 
 
 def keep_latest_per_check(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -306,6 +312,36 @@ def find_dq_check(
     return None
 
 
+def empty_dq_kpis() -> Dict[str, int]:
+    return {
+        "success": 0,
+        "failed": 0,
+        "warning": 0,
+        "delayed": 0,
+        "skipped": 0,
+        "running": 0,
+        "total": 0,
+    }
+
+
+def kpis_from_checks(checks: List[Dict[str, Any]]) -> Dict[str, int]:
+    """Status tallies from latest-per-check rows (same mapping as the dashboard table)."""
+    kpis = empty_dq_kpis()
+    key = {
+        "SUCCESS": "success",
+        "FAILED": "failed",
+        "WARNING": "warning",
+        "DELAYED": "warning",
+        "SKIPPED": "skipped",
+        "RUNNING": "running",
+    }
+    for c in checks:
+        status = normalize_dq_status(c.get("status"))
+        kpis[key.get(status, "running")] += 1
+    kpis["total"] = len(checks)
+    return kpis
+
+
 def _row_status(status: Any, pass_count: Any, fail_count: Any) -> str:
     """Map recorded DQ engine status + pass/fail counts.
 
@@ -387,6 +423,46 @@ class DQConnector:
     def _configured(self) -> bool:
         return snowflake_configured(self.settings.get("snowflake", {}))
 
+    def count_latest_results(self, date_from: Optional[str] = None,
+                             date_to: Optional[str] = None) -> Optional[int]:
+        """Exact Total KPI: latest rows per QC+subject in range, uncapped by result_limit."""
+        if not self._configured():
+            return None
+
+        dq_cfg = get_dq_monitoring_config(self.settings)
+        table_fqn = dq_cfg["table_fqn"]
+        try:
+            cur = self.sf._connect().cursor()
+            sql = f"""
+                SELECT COUNT(*)
+                FROM (
+                    SELECT 1 AS row_marker
+                    FROM {table_fqn}
+                    WHERE 1=1
+            """
+            params: List[Any] = []
+            if date_from:
+                sql += f" AND {_RUN_DATE_TS_SQL} >= %s::TIMESTAMP_LTZ"
+                params.append(date_from)
+            if date_to:
+                sql += f" AND {_RUN_DATE_TS_SQL} <= %s::TIMESTAMP_LTZ"
+                params.append(date_to)
+            sql += f"""
+                    QUALIFY ROW_NUMBER() OVER (
+                        PARTITION BY QC_ID, COALESCE(TO_VARCHAR(SUBJECT_AREA), '')
+                        ORDER BY {_RUN_DATE_TS_SQL} DESC NULLS LAST
+                    ) = 1
+                ) src
+            """
+            log_sql(sql[:300], "dq_connector:count_latest_results", "READ", allowed=True)
+            cur.execute(sql, params)
+            row = cur.fetchone()
+            return int(row[0] or 0) if row else 0
+        except Exception as e:  # noqa: BLE001 — Total falls back to len(all_checks)
+            self.last_error = f"count_latest_results: {e}"
+            self.sf._conn = None
+            return None
+
     def read_results(self, date_from: Optional[str] = None,
                      date_to: Optional[str] = None,
                      revalidate: bool = True,
@@ -398,6 +474,12 @@ class DQConnector:
         records: List[Dict[str, Any]] = []
         dq_cfg = get_dq_monitoring_config(self.settings)
         table_fqn = dq_cfg["table_fqn"]
+        # Date-range size when known; ignore editable settings limit (removed from UI).
+        result_limit = _DQ_FETCH_HARD_CAP
+        if latest_only:
+            source_n = self.count_latest_results(date_from, date_to)
+            if source_n is not None:
+                result_limit = min(_DQ_FETCH_HARD_CAP, max(1, source_n))
         try:
             cur = self.sf._connect().cursor()
             sql = f"""
@@ -430,7 +512,7 @@ class DQConnector:
                 """
             sql += f"""
                 ORDER BY {_RUN_DATE_TS_SQL} DESC NULLS LAST
-                LIMIT 500
+                LIMIT {result_limit}
             """
             log_sql(sql[:300], "dq_connector:read_results", "READ", allowed=True)
             cur.execute(sql, params)
@@ -469,7 +551,7 @@ class DQConnector:
             records = keep_latest_per_check(records)
 
         if revalidate and records:
-            self._revalidate_failures(records)
+            self._revalidate_failures(records, limit=self._configured_revalidate_limit())
         return records
 
     def _row_from_sql(self, row: tuple, index: int = 0) -> Dict[str, Any]:
@@ -1085,18 +1167,141 @@ class DQConnector:
             "error": exec_result.get("error") if exec_result else None,
         }
 
-    def _revalidate_failures(self, records: List[Dict[str, Any]],
-                             limit: int = _MAX_LIVE_REVALIDATE) -> None:
-        """Re-run recorded FAILED/WARNING checks live and reconcile their status in place.
+    def _configured_revalidate_limit(self) -> Optional[int]:
+        """None = Default (all failures); int = Custom cap (1…DQ_REVALIDATE_CUSTOM_MAX)."""
+        cfg = get_dq_monitoring_config(self.settings)
+        if (cfg.get("revalidate_mode") or "default") != "custom":
+            return None
+        lim = cfg.get("revalidate_limit")
+        try:
+            n = int(lim)
+        except (TypeError, ValueError):
+            return None
+        if n < 1:
+            return None
+        return min(n, DQ_REVALIDATE_CUSTOM_MAX)
 
-        A check recorded as failed that now passes is flipped to SUCCESS and flagged
-        as stale; a check that still fails keeps FAILED with a live violating-row count.
+    @staticmethod
+    def _apply_revalidate_result(rec: Dict[str, Any], rv: Dict[str, Any]) -> None:
+        """Mutate a check row with a live revalidate_check() result."""
+        rec["live_checked"] = rv["executed"]
+        rec["live_failing_count"] = rv["failing_count"]
+        if rv["live_status"]:
+            rec["status"] = rv["live_status"]
+            rec["stale"] = (rv["live_status"] == "SUCCESS")
+            # Keep the displayed detail text consistent with the live verdict, so a
+            # reconciled row never shows "SUCCESS" next to a stale "Fail: 1".
+            fc = rv["failing_count"]
+            total = int(rv.get("row_count") or 0)
+            desc = (rec.get("raw") or {}).get("QC_DESCRIPTION") or ""
+            if rv["live_status"] == "SUCCESS":
+                pass_n = total if total > 0 else 1
+                rec["fail_count"] = 0
+                rec["pass_count"] = pass_n
+                note = " (recorded failure is stale / resolved)" if rec.get("recorded_status") in (
+                    "FAILED", "DELAYED", "WARNING") else ""
+                rec["error"] = _detail_text(f"{desc}{note}".strip(), pass_n, 0)
+            else:
+                fail_n = int(fc) if fc is not None else 1
+                pass_n = max(total - fail_n, 0) if total > fail_n else 0
+                rec["fail_count"] = fail_n
+                rec["pass_count"] = pass_n
+                if rv["live_status"] == "WARNING" or (pass_n > 0 and fail_n > 0):
+                    rec["status"] = "WARNING"
+                rec["error"] = _detail_text(desc, pass_n, fail_n)
+        elif rv.get("error"):
+            # Live SQL did not complete. Timeout ≠ data failure.
+            rec["live_checked"] = True
+            err = str(rv["error"])[:180]
+            desc = (rec.get("raw") or {}).get("QC_DESCRIPTION") or ""
+            is_timeout = ("000604" in err) or ("timeout" in err.lower())
+            if is_timeout:
+                rec["live_timeout"] = True
+                rec["status"] = rec.get("recorded_status") or rec.get("status") or "FAILED"
+                rec["error"] = _detail_text(
+                    f"{desc} · Live revalidate timed out (client); recorded status kept"
+                    .strip(),
+                    rec.get("pass_count"),
+                    rec.get("fail_count"),
+                )
+            else:
+                rec["status"] = "FAILED"
+                rec["fail_count"] = rec.get("fail_count") or 1
+                rec["pass_count"] = 0
+                rec["error"] = _detail_text(f"{desc} · SQL error: {err}".strip(), 0, 1)
+
+    def revalidate_one(
+        self,
+        qc_id: str,
+        subject_area: Optional[str] = None,
+        *,
+        recorded_status: Optional[str] = None,
+        check_id: Optional[str] = None,
+        description: Optional[str] = None,
+        pass_count: Any = None,
+        fail_count: Any = None,
+    ) -> Dict[str, Any]:
+        """Live-revalidate a single QC + subject area and return the updated row fields."""
+        qc = str(qc_id or "").strip()
+        if not qc:
+            return {"ok": False, "error": "qc_id is required"}
+        sa = (str(subject_area).strip() if subject_area not in (None, "") else None)
+        rec: Dict[str, Any] = {
+            "id": check_id,
+            "name": qc,
+            "table_name": sa,
+            "status": recorded_status or "FAILED",
+            "recorded_status": recorded_status or "FAILED",
+            "pass_count": pass_count,
+            "fail_count": fail_count,
+            "raw": {"QC_DESCRIPTION": description or ""},
+        }
+        try:
+            rv = self.revalidate_check(rec)
+        except Exception as e:  # noqa: BLE001
+            return {
+                "ok": False,
+                "qc_id": qc,
+                "subject_area": sa,
+                "id": check_id,
+                "error": str(e),
+                "live_checked": False,
+            }
+        self._apply_revalidate_result(rec, rv)
+        return {
+            "ok": True,
+            "qc_id": qc,
+            "subject_area": sa,
+            "id": check_id or rec.get("id"),
+            "status": rec.get("status"),
+            "recorded_status": rec.get("recorded_status"),
+            "live_status": rv.get("live_status"),
+            "stale": bool(rec.get("stale")),
+            "error": rec.get("error"),
+            "pass_count": rec.get("pass_count"),
+            "fail_count": rec.get("fail_count"),
+            "live_checked": bool(rec.get("live_checked")),
+            "live_timeout": bool(rec.get("live_timeout")),
+            "live_failing_count": rec.get("live_failing_count"),
+            "executed": bool(rv.get("executed")),
+            "sql_error": rv.get("error"),
+        }
+
+    def _revalidate_failures(
+        self,
+        records: List[Dict[str, Any]],
+        limit: Optional[int] = None,
+    ) -> None:
+        """Re-run recorded FAILED/WARNING/DELAYED checks live and reconcile in place.
+
+        limit=None → every failing row in the loaded date-range set (Default mode).
+        limit=N → at most N failing rows (Custom mode).
         """
         checked = 0
         for rec in records:
             if rec.get("status") not in ("FAILED", "DELAYED", "WARNING"):
                 continue
-            if checked >= limit:
+            if limit is not None and checked >= limit:
                 break
             checked += 1
             rec["recorded_status"] = rec["status"]
@@ -1105,83 +1310,83 @@ class DQConnector:
             except Exception:  # noqa: BLE001 — never let a bad check break the dashboard
                 rec["live_checked"] = False
                 continue
-            rec["live_checked"] = rv["executed"]
-            rec["live_failing_count"] = rv["failing_count"]
-            if rv["live_status"]:
-                rec["status"] = rv["live_status"]
-                rec["stale"] = (rv["live_status"] == "SUCCESS")
-                # Keep the displayed detail text consistent with the live verdict, so a
-                # reconciled row never shows "SUCCESS" next to a stale "Fail: 1".
-                # Use the same "Pass: X / Fail: Y · description" shape as recorded checks.
-                fc = rv["failing_count"]
-                total = int(rv.get("row_count") or 0)
-                desc = (rec.get("raw") or {}).get("QC_DESCRIPTION") or ""
-                if rv["live_status"] == "SUCCESS":
-                    # Prefer total rows as pass count when the rule returned detail rows.
-                    pass_n = total if total > 0 else 1
-                    rec["fail_count"] = 0
-                    rec["pass_count"] = pass_n
-                    note = " (recorded failure is stale / resolved)" if rec["recorded_status"] in (
-                        "FAILED", "DELAYED", "WARNING") else ""
-                    rec["error"] = _detail_text(f"{desc}{note}".strip(), pass_n, 0)
-                else:
-                    fail_n = int(fc) if fc is not None else 1
-                    # Layer checks: many rows succeed, few mismatch — don't force Pass: 0.
-                    pass_n = max(total - fail_n, 0) if total > fail_n else 0
-                    rec["fail_count"] = fail_n
-                    rec["pass_count"] = pass_n
-                    # Soft-fail: keep WARNING when live also reports a partial breach.
-                    if rv["live_status"] == "WARNING" or (pass_n > 0 and fail_n > 0):
-                        rec["status"] = "WARNING"
-                    rec["error"] = _detail_text(desc, pass_n, fail_n)
-            elif rv.get("error"):
-                # Live SQL did not complete. Distinguish client timeout (000604) from a
-                # real rule error (e.g. division by zero): timeout is not proof the data
-                # fails — keep the recorded status and annotate that live verify timed out.
-                rec["live_checked"] = True
-                err = str(rv["error"])[:180]
-                desc = (rec.get("raw") or {}).get("QC_DESCRIPTION") or ""
-                is_timeout = ("000604" in err) or ("timeout" in err.lower())
-                if is_timeout:
-                    rec["live_timeout"] = True
-                    # Do not invent a stronger FAIL from our client timeout alone.
-                    rec["status"] = rec.get("recorded_status") or rec.get("status") or "FAILED"
-                    rec["error"] = _detail_text(
-                        f"{desc} · Live revalidate timed out (client); recorded status kept"
-                        .strip(),
-                        rec.get("pass_count"),
-                        rec.get("fail_count"),
-                    )
-                else:
-                    rec["status"] = "FAILED"
-                    rec["fail_count"] = rec.get("fail_count") or 1
-                    rec["pass_count"] = 0
-                    rec["error"] = _detail_text(f"{desc} · SQL error: {err}".strip(), 0, 1)
+            self._apply_revalidate_result(rec, rv)
+
+    @staticmethod
+    def _attach_table_filters(
+        payload: Dict[str, Any],
+        *,
+        status: Optional[str] = None,
+        q: Optional[str] = None,
+        page: Any = None,
+        page_size: Any = None,
+    ) -> Dict[str, Any]:
+        """KPIs from full inventory; table_checks is one filtered/paginated page."""
+        checks = list(payload.get("all_checks") or [])
+        filtered = filter_dq_checks(checks, status=status, q=q)
+        page_info = paginate_rows(filtered, page=page, page_size=page_size)
+        out = dict(payload)
+        out["table_checks"] = page_info["rows"]
+        out["match_count"] = page_info["match_count"]
+        out["page"] = page_info["page"]
+        out["page_size"] = page_info["page_size"]
+        out["page_from"] = page_info["page_from"]
+        out["page_to"] = page_info["page_to"]
+        out["inventory_count"] = len(checks)
+        # Do not ship the full inventory on the wire — chat gets a failing preview.
+        out["all_checks"] = failing_checks_preview(checks)
+        out["status_filter"] = (status or "ALL").upper()
+        out["q"] = (q or "").strip()
+        return out
 
     def summary(self, date_from: Optional[str] = None,
                 date_to: Optional[str] = None,
-                revalidate: bool = True) -> Dict[str, Any]:
-        # Any call: if a live-revalidated payload exists for this exact date range
-        # and is within the 30-minute TTL, return it (skip Snowflake live rules).
-        # Cache miss + revalidate=False → recorded DQM_VALIDATION_SUMMARY read.
-        # Cache miss + revalidate=True  → live rules, then write full response to cache.
-        cached = get_cached_summary(date_from, date_to)
-        if cached is not None:
-            return cached
+                revalidate: bool = True,
+                status: Optional[str] = None,
+                q: Optional[str] = None,
+                page: Any = None,
+                page_size: Any = None) -> Dict[str, Any]:
+        # revalidate=False: prefer a live-revalidated cache for this date range (30m TTL).
+        # revalidate=True: always skip cache and re-run live rules for all failures, then
+        # write the full inventory back to cache.
+        # Filters/pagination are applied after load/cache so KPIs stay unfiltered.
+        if not revalidate:
+            cached = get_cached_summary(date_from, date_to)
+            if cached is not None:
+                checks_cached = cached.get("all_checks") or []
+                # Recompute KPIs from the full cached row set (status + total).
+                cached["kpis"] = kpis_from_checks(checks_cached)
+                cached["result_limit"] = len(checks_cached)
+                source_total = self.count_latest_results(date_from, date_to)
+                if source_total is not None and len(checks_cached) < source_total:
+                    # Stale/capped cache — fall through and reload the full date range.
+                    pass
+                else:
+                    if source_total is not None:
+                        cached["kpis"]["total"] = source_total
+                    # Reflect current Settings so the confirm dialog stays accurate.
+                    dq_now = get_dq_monitoring_config(self.settings)
+                    cached["revalidate_mode"] = dq_now.get("revalidate_mode") or "default"
+                    cached["revalidate_limit"] = dq_now.get("revalidate_limit")
+                    return self._attach_table_filters(
+                        cached, status=status, q=q, page=page, page_size=page_size,
+                    )
 
         # Dashboard shows latest run per QC + subject area within the date window.
         checks = self.read_results(
             date_from, date_to, revalidate=bool(revalidate), latest_only=True)
 
-        kpis = {"success": 0, "failed": 0, "warning": 0, "delayed": 0, "skipped": 0, "running": 0, "total": len(checks)}
-        key = {"SUCCESS": "success", "FAILED": "failed", "WARNING": "warning", "DELAYED": "warning",
-               "SKIPPED": "skipped", "RUNNING": "running"}
         live_n = 0
         for c in checks:
             c["status"] = normalize_dq_status(c.get("status"))
-            kpis[key.get(c["status"], "running")] += 1
             if c.get("live_checked"):
                 live_n += 1
+
+        # All status KPIs + Total from the full loaded latest-per-check set.
+        kpis = kpis_from_checks(checks)
+        source_total = self.count_latest_results(date_from, date_to)
+        if source_total is not None:
+            kpis["total"] = source_total
 
         errors = []
         if self.last_error:
@@ -1198,13 +1403,19 @@ class DQConnector:
             "date_from": date_from,
             "date_to": date_to,
             "table": dq_cfg["table_fqn"],
+            "result_limit": len(checks),
+            "revalidate_mode": dq_cfg.get("revalidate_mode") or "default",
+            "revalidate_limit": dq_cfg.get("revalidate_limit"),
             "platforms": platforms_configured(self.settings),
             "kpis": kpis,
             "all_checks": checks,
             "errors": errors,
         }
         if revalidate:
+            # Cache the unfiltered inventory only (before response paging).
             updated_at = write_full_summary_cache(date_from, date_to, result)
             result["cache_updated_at"] = updated_at
             result["status_mode"] = "live"
-        return result
+        return self._attach_table_filters(
+            result, status=status, q=q, page=page, page_size=page_size,
+        )

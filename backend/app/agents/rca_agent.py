@@ -478,22 +478,8 @@ class RCAAgent(BaseAgent):
         """Match user-contributed knowledge rules against current failure context."""
         if not self._knowledge:
             return []
-        rules: List[Dict[str, str]] = []
-        current_block: Dict[str, str] = {}
-        for line in self._knowledge.split("\n"):
-            stripped = line.strip()
-            if stripped == "---":
-                if current_block.get("PATTERN"):
-                    rules.append(current_block)
-                current_block = {}
-                continue
-            if ":" in stripped and stripped.split(":")[0].strip().upper() in (
-                "PATTERN", "CATEGORY", "ROOT_CAUSE", "FIX", "ADDED_BY", "ADDED_ON", "NOTES"
-            ):
-                key, _, val = stripped.partition(":")
-                current_block[key.strip().upper()] = val.strip()
-        if current_block.get("PATTERN"):
-            rules.append(current_block)
+        from app.core.rca_knowledge_store import parse_rules
+        rules = parse_rules(self._knowledge)
 
         matched = []
         context_lower = " ".join([
@@ -1990,7 +1976,7 @@ class RCAAgent(BaseAgent):
         lineage = LineageService()
         df, dt = _normalize_rca_dates(date_from, date_to)
         # RCA only needs one check row. Do NOT revalidate the whole failure set here —
-        # read_results(revalidate=True) re-runs up to 8 DQ SQLs and was ~74s of /api/rca.
+        # read_results(revalidate=True) re-runs every failing DQ SQL in range.
         # Live verdict for THIS check is done once below via execute_dq_rule.
         from app.connectors.dq_connector import find_dq_check, get_cached_summary
         cached = get_cached_summary(df, dt)

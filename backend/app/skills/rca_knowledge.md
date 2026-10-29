@@ -13,6 +13,7 @@ PATTERN: error message pattern or task name pattern (matched case-insensitively)
 CATEGORY: Code Failure | Data Quality Failure | Dependency Failure | Infrastructure Failure | Data Availability Failure
 ROOT_CAUSE: description of the known root cause
 FIX: proven resolution steps
+SQL_CODE: optional fixed SQL (newlines stored as \n)
 ADDED_BY: person who contributed this knowledge
 ADDED_ON: date added
 NOTES: any additional context
